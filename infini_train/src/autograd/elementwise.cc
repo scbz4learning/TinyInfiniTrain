@@ -10,8 +10,17 @@ std::vector<std::shared_ptr<Tensor>> Neg::Forward(const std::vector<std::shared_
     // TODO：通过Dispatcher获取设备专属kernel，对输入张量进行取反操作
     // NOTES: 依赖test_dispatcher，Neg kernel实现已给出
     // =================================== 作业 ===================================
+    CHECK_EQ(input_tensors.size(), 1); // 取反操作只需要一个对象
+    const auto &input = input_tensors[0];
 
-    return std::vector<std::shared_ptr<Tensor>>();
+    // there is no need for previous grad. The \partial (-x) = x, which means we need current grad only.
+    // Might be the only special case.
+    // // No function to setup context in the class
+    // saved_tensors_ = {input};
+
+    auto device = input->GetDevice().Type();
+    auto kernel = Dispatcher::Instance().GetKernel({device, "NegForward"});
+    return {kernel.Call<std::shared_ptr<Tensor>>(input)};
 }
 
 std::vector<std::shared_ptr<Tensor>> Neg::Backward(const std::vector<std::shared_ptr<Tensor>> &grad_outputs) {
@@ -19,8 +28,15 @@ std::vector<std::shared_ptr<Tensor>> Neg::Backward(const std::vector<std::shared
     // TODO：通过Dispatcher获取设备专属的反向传播kernel，计算梯度
     // NOTES: 依赖test_dispatcher，Neg的kernel实现已给出
     // =================================== 作业 ===================================
+    // CHECK_EQ(saved_tensors_.size(), 1);
+    // const auto &input = saved_tensors_[0];
+    CHECK_EQ(grad_outputs.size(), 1);
+    const auto &grad_output = grad_outputs[0];
 
-    return std::vector<std::shared_ptr<Tensor>>();
+    auto device = grad_output->GetDevice().Type();
+    auto kernel = Dispatcher::Instance().GetKernel({device, "NegBackward"});
+    // return {kernel.Call<std::shared_ptr<Tensor>>(grad_output, input)};
+    return {kernel.Call<std::shared_ptr<Tensor>>(grad_output)};
 }
 
 std::vector<std::shared_ptr<Tensor>> Reciprocal::Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors) {

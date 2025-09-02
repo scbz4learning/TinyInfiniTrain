@@ -18,6 +18,21 @@ void AdamAccumulateGrad(const std::shared_ptr<Tensor> &grad, const std::shared_p
     // TODO：实现Adam优化器的梯度累积和参数更新
     // REF:
     // =================================== 作业 ===================================
+    // 只迭代一次
+    // m、v 已经给出，给的只读，不需要计算
+    // 这里只是一个kernel，相当于Add
+
+    m->EigenMatrix() = beta1 * m->EigenMatrix() + (1-beta1) * grad->EigenMatrix();
+    // 这里要逐元素平方，为什么？Adam优化那里，v=...g^2 不是矩阵乘，而是矩阵逐元素乘法吗？
+    v->EigenMatrix() = beta2 * v->EigenMatrix() + (1-beta2) * grad->EigenMatrix().array().square().matrix(); // x: grad->E * grad->E
+
+    // 这里不用可以省略 m_hat, v_hat 表达式，因为Eigen会延迟计算，不会复制一份过来
+    // 同时，保持array不用来回转
+    auto m_hat = m->EigenMatrix().array() / (1 - std::pow(beta1, t));
+    auto v_hat = v->EigenMatrix().array() / (1 - std::pow(beta2, t));
+
+    // param->EigenMatrix() -= learning_rate * (m->EigenMatrix / (1 - std::pow(beta1, t))) / ((v->EigenMatrix() / (1 - pow(beta2, t))).array().sqrt() + eps);
+    param->EigenMatrix().array() -= learning_rate * m_hat / (v_hat.sqrt() + eps);
 }
 
 } // namespace infini_train::kernels::cpu

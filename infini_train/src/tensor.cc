@@ -283,7 +283,25 @@ std::shared_ptr<Tensor> Tensor::Flatten(int64_t start, int64_t end) {
     // HINT:
     // =================================== 作业 ===================================
 
-    return std::make_shared<Tensor>();
+    // support neg dim
+    if (start < 0) {
+        start += dims_.size();
+    }
+
+    if (end < 0) {
+        end += dims_.size();
+    }
+
+    CHECK_GE(start, 0);
+    CHECK_GE(end, start);
+    CHECK_LT(end, dims_.size());
+    
+    const auto flattened_dim = std::accumulate(dims_.begin() + start, dims_.begin() + end + 1, 1, std::multiplies<int64_t>{});
+    auto new_shape = dims_;
+    new_shape[end] = flattened_dim;
+    new_shape.erase(new_shape.begin() + start, new_shape.begin() + end);
+
+    return Contiguous()->View(new_shape);
 }
 
 std::shared_ptr<Tensor> Tensor::Squeeze(int64_t dim) {
@@ -358,6 +376,18 @@ void Tensor::Backward(std::shared_ptr<Tensor> gradient, bool retain_graph, bool 
     // TODO：实现自动微分反向传播
     // 功能描述：1. 计算当前张量对叶子节点的梯度    2. 支持多输出场景的梯度累加
     // =================================== 作业 ===================================
+    // 叶子节点的建立AccumulateGrad类的过程也在BackwardPartial里面了
+    CHECK(requires_grad_);
+    if (!gradient) {
+        // gradient 是可以为空的，默认值是nullptr。定义在.h文件。不造一个gradient会segfault
+        // 要造一个全1的Tensor类
+        // 根据torch语法想到Ones，搜索到nn functional里有Ones
+        // 但是用init的更好，因为头文件里有了
+        // function里的也是调用的init
+        auto ones = std::make_shared<Tensor>(dims_, DataType::kFLOAT32);
+        gradient = infini_train::nn::init::Ones(ones);
+    }
+    grad_fn_->BackwardPartial(gradient, output_idx_);
 }
 
 void Tensor::ZeroGrad() {
