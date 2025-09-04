@@ -23,8 +23,8 @@ void AccumulateGrad(const std::shared_ptr<Tensor> &gradient, float rate, const s
 }
 
 __global__ void AdamAccumulateGradKernel(float* param_ptr,
-                                        const float* m_ptr,
-                                        const float* v_ptr,
+                                        float* m_ptr,
+                                        float* v_ptr,
                                         const float* grad_ptr,
                                         const float beta1,
                                         const float beta2,
@@ -37,6 +37,11 @@ __global__ void AdamAccumulateGradKernel(float* param_ptr,
     if (idx < num_elements) {
         float m_t = beta1 * m_ptr[idx] + (1 - beta1) * grad_ptr[idx];
         float v_t = beta2 * v_ptr[idx] + (1 - beta2) * grad_ptr[idx] * grad_ptr[idx];
+        
+        // 要写回m&v！
+        m_ptr[idx] = m_t;
+        v_ptr[idx] = v_t;
+        
         float m_hat = m_t / bias_correction1;
         float v_hat = v_t / bias_correction2;
         param_ptr[idx] -= learning_rate * m_hat / (sqrtf(v_hat) + eps);
@@ -52,22 +57,18 @@ void AdamAccumulateGrad(const std::shared_ptr<Tensor> &grad, const std::shared_p
     // REF:
     // =================================== 作业 ===================================
     // check
-    // 空指针检查
     CHECK(grad != nullptr);
     CHECK(param != nullptr);
     CHECK(m != nullptr);
     CHECK(v != nullptr);
 
-    // 维度检查
     const size_t n = grad->NumElements();
     CHECK_EQ(param->NumElements(), n);
     CHECK_EQ(m->NumElements(), n);
     CHECK_EQ(v->NumElements(), n);
 
-    // 步数检查
     CHECK_GT(t, 0) << "Adam step t must be >= 1";
 
-    // 计算偏执修正系数，避免GPU重复计算
     const float bias_correction1 = 1 - std::pow(beta1, t);
     const float bias_correction2 = 1 - std::pow(beta2, t);
     
