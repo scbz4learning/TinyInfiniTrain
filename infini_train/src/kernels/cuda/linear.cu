@@ -112,17 +112,23 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
     // 所以要计算
     // B^T * A^T
     //
-    // B什么也不做就会被解释成(bs, K, N)，主序N
-    // A什么也不做就会被解释成(bs, N, M)，主序M
+    // B什么也不做就会被解释成(bs, K, N)，所以不用手动调换再转置了，但是主序K
+    // A什么也不做就会被解释成(bs, N, M)，主序N
+    //
+    // 总结
+    // 永远写成 op(B^T) * op(A^T) = C^T
+    // B^T [bs, K, N], K
+    // A^T [bs, N, M], N
+    // C^T [bs, K, M], K
     CUBLAS_CHECK(cublasSgemmStridedBatched(
         handle,
         CUBLAS_OP_N, CUBLAS_OP_N,
-        K, M, N, // cuBLAS布局得到的 m n 公共
+        K, M, N,
         &alpha,
-        B, N, strideB,
-        A, M, strideA,
+        B, K, strideB,
+        A, N, strideA,
         &beta,
-        C, M, strideC,
+        C, K, strideC,
         bs));
 
     CUBLAS_CHECK(cublasDestroy(handle));
@@ -174,32 +180,36 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     const long long strideB = N * K;
     const long long strideC = M * K;
 
-    // grad_A = grad_C * T(B)
-    // grad_C [bs, M, K]
-    // B      [bs, N, K]
-    // grad_A [bs, M, N]
+    // grad_A = grad_C * B^T
+    // grad_A^T = T(B^T) * grad_C^T
+    
+    // B^T      [bs, K, N], K, op=T
+    // grad_C^T [bs, K, M], K
+    // grad_A^T [bs, N, M], N
     CUBLAS_CHECK(cublasSgemmStridedBatched(
         handle,
-        CUBLAS_OP_N, CUBLAS_OP_T,
+        CUBLAS_OP_T, CUBLAS_OP_N,
         N, M, K,
         &alpha,
-        grad_C, K, strideC,
         B, K, strideB,
+        grad_C, K, strideC,
         &beta,
         grad_A, N, strideA,
         bs));
     
     // grad_B = T(A) * grad_C
-    // A      [bs, M, N]
-    // grad_C [bs, M, K]
-    // grad_B [bs, N, K]
+    // grad_B = grad_C^T * T(A^T)
+
+    // grad_C^T [bs, K, M], K
+    // A^T      [bs, N, M], N, op=T
+    // grad_B^T [bs, K, N], K
     CUBLAS_CHECK(cublasSgemmStridedBatched(
         handle,
-        CUBLAS_OP_T, CUBLAS_OP_N,
+        CUBLAS_OP_N, CUBLAS_OP_T,
         K, N, M,
         &alpha,
-        A, N, strideA,
         grad_C, K, strideC,
+        A, N, strideA,
         &beta,
         grad_B, K, strideB,
         bs));
