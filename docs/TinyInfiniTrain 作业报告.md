@@ -170,30 +170,146 @@ std::vector<std::shared_ptr<Tensor>> Neg::Backward(const std::vector<std::shared
 需要实现的代码块位置：`infini_train/src/kernels/cuda/linear.cu`
 
 ```c++
-    std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tensor> &other) {
-        // =================================== 作业 ===================================
-        // TODO：实现CUDA上的矩阵乘法前向计算
-        // REF:
-        // =================================== 作业 ===================================
-    }
+std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tensor> &other) {
+    // =================================== 作业 ===================================
+    // TODO：实现CUDA上的矩阵乘法前向计算
+    // REF:
+    // =================================== 作业 ===================================
+    // Check input is matrices
+    // Check input is matrices
+    const auto &input_dims = input->Dims();
+    const auto input_dim_size = input_dims.size();
+    CHECK_GE(input_dim_size, 2);
 
-    std::tuple<std::shared_ptr<Tensor>, std::shared_ptr<Tensor>>
-        MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tensor> &other,
-                    const std::shared_ptr<Tensor> &grad_output) {
-        // =================================== 作业 ===================================
-        // TODO：实现CUDA上的矩阵乘法反向传播
-        // REF:
-        // =================================== 作业 ===================================
-    }
+    const auto M = *(input_dims.rbegin() + 1);
+    const auto N = *(input_dims.rbegin());
+
+    // x: ther can be scalar
+    // no it cannot
+    const auto &other_dims = other->Dims();
+    const auto other_dim_size = other_dims.size();
+    CHECK_GE(other_dims.size(), 2);
+
+    CHECK_EQ(N, *(other_dims.rbegin() + 1));
+    const auto K = *(other_dims.rbegin());
+
+    // suppose no broadcast
+    auto output_dims = input_dims;
+    output_dims.back() = other_dims.back();
+    auto output = std::make_shared<Tensor>(output_dims, DataType::kFLOAT32);
+
+    const auto bs = std::accumulate(input_dims.rbegin() + 2, input_dims.rend(), 1, std::multiplies<int64_t>{});
+
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+    cublasHandle_t handle;
+    CUBLAS_CHECK(cublasCreate(&handle));
+
+    const float* A = reinterpret_cast<const float *>(input->DataPtr());
+    const float* B = reinterpret_cast<const float *>(other->DataPtr());
+    float* C = reinterpret_cast<float *>(output->DataPtr());
+
+    // stride
+    const long long strideA = M * N;
+    const long long strideB = N * K;
+    const long long strideC = M * K;
+
+    CUBLAS_CHECK(cublasSgemmStridedBatched(
+        handle,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        M, K, N,
+        &alpha,
+        A, M, strideA,
+        B, N, strideB,
+        &beta,
+        C, M, strideC,
+        bs));
+
+    CUBLAS_CHECK(cublasDestroy(handle));
+    return output;
+}
+
+std::tuple<std::shared_ptr<Tensor>, std::shared_ptr<Tensor>>
+MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tensor> &other,
+               const std::shared_ptr<Tensor> &grad_output) {
+    // =================================== 作业 ===================================
+    // TODO：实现CUDA上的矩阵乘法反向传播
+    // REF:
+    // =================================== 作业 ===================================
+    // Check input is matrices
+    const auto &input_dims = input->Dims();
+    const auto input_dim_size = input_dims.size();
+    CHECK_GE(input_dim_size, 2);
+
+    const auto M = *(input_dims.rbegin() + 1);
+    const auto N = *(input_dims.rbegin());
+
+    // suppose no broadcast
+    const auto &other_dims = other->Dims();
+    const auto other_dim_size = other_dims.size();
+    CHECK_GE(other_dims.size(), 2);
+
+    CHECK_EQ(N, *(other_dims.rbegin() + 1));
+    const auto K = *(other_dims.rbegin());
+
+    const auto bs = std::accumulate(input_dims.rbegin() + 2, input_dims.rend(), 1, std::multiplies<int64_t>{});
+
+    auto grad_input = std::make_shared<Tensor>(input_dims, DataType::kFLOAT32);
+    auto grad_other = std::make_shared<Tensor>(other_dims, DataType::kFLOAT32);
+
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+    cublasHandle_t handle;
+    CUBLAS_CHECK(cublasCreate(&handle));
+
+    const float* A = reinterpret_cast<const float *>(input->DataPtr());
+    const float* B = reinterpret_cast<const float *>(other->DataPtr());
+    const float* grad_C = reinterpret_cast<const float *>(grad_output->DataPtr());
+    float* grad_A = reinterpret_cast<float *>(grad_input->DataPtr());
+    float* grad_B = reinterpret_cast<float *>(grad_other->DataPtr());
+
+    // Strides
+    const long long strideA = M * N;
+    const long long strideB = N * K;
+    const long long strideC = M * K;
+
+    CUBLAS_CHECK(cublasSgemmStridedBatched(
+        handle,
+        CUBLAS_OP_N, CUBLAS_OP_T,
+        M, N, K,
+        &alpha,
+        grad_C, M, strideC,
+        B, N, strideB,
+        &beta,
+        grad_A, M, strideA,
+        bs));
+    
+    CUBLAS_CHECK(cublasSgemmStridedBatched(
+        handle,
+        CUBLAS_OP_T, CUBLAS_OP_N,
+        N, K, M,
+        &alpha,
+        A, M, strideA,
+        grad_C, M, strideC,
+        &beta,
+        grad_B, N, strideB,
+        bs));
+
+    CUBLAS_CHECK(cublasDestroy(handle));
+
+    return {grad_input, grad_other};
+}
 ```
 
 #### 解决思路
-CPU 部分 参考 `LinearForward` 和 `LinerBackward` 的实现写.  
-
+CPU 部分：参考 `LinearForward` 和 `LinerBackward` 的实现写.  
+GPU 部分：参考 CPU 写。
+想到 cuda 编程说的，不要用 for 循环，在 host 和 GPU 之前传多次。所以借助了 GPT 换成了 batched 版本
 
 #### 遇到问题
 CPU 部分, batch size 是要单独拿出来的. `Eigen` 并不支持高维矩阵的直接计算, 因为会折叠成向量, 导致 \[bs1, M, N\] 和 \[bs2, N, K\] 中, N 对不齐. 解决的办法是先 map. 数据指针在 class Tensor 的 cc 文件可以找到定义. 但是最后也不知道怎么找到 `Map`. 最后的解决办法是 GPT. 
 
+GPU 的 cublas 是列优先的。感觉之前学过，矩阵乘法，ikj 顺序比 ijk 的 locality 好很多。估计是这个原因？
 
 ### 作业三：实现Adam优化器
 
@@ -238,25 +354,85 @@ void AdamAccumulateGrad(const std::shared_ptr<Tensor> &grad, const std::shared_p
 代码位置：infini_train/src/kernels/cuda/accumulate_grad.cu
 
 ```c++
+__global__ void AdamAccumulateGradKernel(float* param_ptr,
+                                        const float* m_ptr,
+                                        const float* v_ptr,
+                                        const float* grad_ptr,
+                                        const float beta1,
+                                        const float beta2,
+                                        const float bias_correction1,
+                                        const float bias_correction2,
+                                        const float learning_rate,
+                                        const float eps,
+                                        const size_t num_elements) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < num_elements) {
+        float m_t = beta1 * m_ptr[idx] + (1 - beta1) * grad_ptr[idx];
+        float v_t = beta2 * v_ptr[idx] + (1 - beta2) * grad_ptr[idx] * grad_ptr[idx];
+        float m_hat = m_t / bias_correction1;
+        float v_hat = v_t / bias_correction2;
+        param_ptr[idx] -= learning_rate * m_hat / (sqrtf(v_hat) + eps);
+
+    }
+}
+
 void AdamAccumulateGrad(const std::shared_ptr<Tensor> &grad, const std::shared_ptr<Tensor> &param,
                         const std::shared_ptr<Tensor> &m, const std::shared_ptr<Tensor> &v, float learning_rate,
                         float beta1, float beta2, float eps, int64_t t) {
     // =================================== 作业 ===================================
     // TODO：实现Adam优化器的梯度累积和参数更新
-    // REF: 
+    // REF:
     // =================================== 作业 ===================================
+    // check
+    // 空指针检查
+    CHECK(grad != nullptr);
+    CHECK(param != nullptr);
+    CHECK(m != nullptr);
+    CHECK(v != nullptr);
+
+    // 维度检查
+    const size_t n = grad->NumElements();
+    CHECK_EQ(param->NumElements(), n);
+    CHECK_EQ(m->NumElements(), n);
+    CHECK_EQ(v->NumElements(), n);
+
+    // 步数检查
+    CHECK_GT(t, 0) << "Adam step t must be >= 1";
+
+    // 计算偏执修正系数，避免GPU重复计算
+    const float bias_correction1 = 1 - std::pow(beta1, t);
+    const float bias_correction2 = 1 - std::pow(beta2, t);
+    
+    int threads_per_block = 256;
+    int num_blocks = (n + threads_per_block - 1) / threads_per_block;
+
+    AdamAccumulateGradKernel<<<num_blocks, threads_per_block>>> (
+        static_cast<float *>(param->DataPtr()),
+        static_cast<float *>(m->DataPtr()),
+        static_cast<float *>(v->DataPtr()),
+        static_cast<float *>(grad->DataPtr()),
+        beta1,
+        beta2,
+        bias_correction1,
+        bias_correction2,
+        learning_rate,
+        eps,
+        n
+    );
 }
 ```
 
 #### 解决思路
-
-
-
-#### 遇到问题
 ```
 // 这里要逐元素平方，为什么？Adam优化那里，v=...g^2 不是矩阵乘，而是矩阵逐元素乘法吗？
 v->EigenMatrix() = beta2 * v->EigenMatrix() + (1-beta2) * grad->EigenMatrix().array().square().matrix(); // x: grad->E * grad->E
 ```
+- [x] GPT 说就是逐元素平方
+
+之后就是套公式就好
+
+#### 遇到问题
+
 
 ### 作业四：实现Tensor基础操作
 
@@ -328,8 +504,8 @@ void Tensor::Backward(std::shared_ptr<Tensor> gradient, bool retain_graph, bool 
 ```
 
 #### 解决思路
-
-
+第一个明显不涉及数据，只是组织变一下。看到上面有个函数使用了 `Contiguous()->View(new_shape)`，然后查了一下知道这是啥意思就好做了。
+第二个主要就是想到 Ones 就好了。
 
 #### 遇到问题
 
@@ -362,24 +538,37 @@ template <typename FuncT> void Register(const KeyT &key, FuncT &&kernel) {
     // TODO：实现kernel注册机制
     // 功能描述：将kernel函数与设备类型、名称绑定
     // =================================== 作业 ===================================
+
+    // without this, there is no warning when adding an existed kernel
+    // however, what is the problem? 
+    // It seems that re-register multiple times should not affect much?
+    CHECK(!key_to_kernel_map_.contains(key)) 
+        << "Kernel already registered: " << key.second;
+    key_to_kernel_map_.emplace(key, KernelFunction(kernel));
 }
 
-#define REGISTER_KERNEL(device, kernel_name, kernel_func) \
+#define REGISTER_KERNEL(device, kernel_name, kernel_func)                                                              \
+    static bool registery_##kernel_name##_##__LINE__ = []() {                                                            \
+        infini_train::Dispatcher::Instance().Register({device, #kernel_name}, kernel_func);                          \
+        return true;                                                                                                   \
+    }();
     // =================================== 作业 ===================================
     // TODO：实现自动注册宏
     // 功能描述：在全局静态区注册kernel，避免显式初始化代码
     // =================================== 作业 ===================================
-    CHECK(!key_to_kernel_map_.contains(key)) 
-        << "Kernel already registered: " << key.second;
-    key_to_kernel_map_.emplace(key, KernelFunction(kernel));
 ```
 
 #### 解决思路
+1. 我原本是直接 `return` 做的，能过test。然后后面两个不会做，就去看了原版 InfiniTrain 项目，发现有这个函数，然后 GPT 一下说更安全，就换成这样了。  
+2. 注册很容易。为什么要判重没理解  
+3. 根本不知道怎么注册宏。。。去看了原版的 InfiniTrain 项目，Register 是 bool 类型的，直接 static 定义静态变量就行了。这里 void 没有返回值，想不到怎么做。还是 GPT。（lambda函数，拼接变量名，字符串化操作，啥的都是在这里新学的）  
 
-
+还有个有意思的地方是，宏内部不能单行注释，原理是: `\` 会拼接行，所以后面一行会进注释。
 
 #### 遇到问题
-
+注册的时候  
+1. 逻辑上：为啥要看是不是已经存在 key 了？如果重复直接替换好像感觉也不错？
+2. 实现上：不加判重，test 会报错。但是具体为什么？
 
 
 ### 作业六：实现GPT-2整体训练
@@ -510,6 +699,24 @@ Tokenizer::Tokenizer(const std::string &filepath) {
     | magic(4B) | version(4B) | vocab_size(4B) | reserved(1012B) | token词表数据       |
     ----------------------------------------------------------------------------------
     ===================================== 作业 ===================================== */
+    std::ifstream fin(filepath, std::ios::binary);
+    CHECK(fin) << "Failed to open file" << filepath;
+
+    const auto header = ReadSeveralBytesFromIfstream(1024, &fin);
+    magic_number_ = BytesToType<uint32_t>(header, 0);
+    const uint32_t version = BytesToType<uint32_t>(header, 4);
+    vocab_size_ = BytesToType<uint32_t>(header, 8);
+    eot_token_ = kEotMap.at(magic_number_);
+    
+    for (uint32_t i = 0; i < vocab_size_; i++) {
+        auto curSizeByte = ReadSeveralBytesFromIfstream(2, &fin);
+        size_t curSize = BytesToType<size_t>(curSizeByte, 0);
+        auto tokenByte = ReadSeveralBytesFromIfstream(curSize, &fin);
+        // memcpy 不能作用于变长类型
+        // std::string token = BytesToType<std::string>(tokenByte, 0);
+        std::string token(tokenByte.begin(), tokenByte.end());
+        token_table_.push_back(token);
+    }
 }
 ```
 
@@ -519,6 +726,8 @@ std::string Tokenizer::Decode(uint32_t token_id) const {
     TODO：实现token_id到文本的转换
     功能描述：根据token_id返回对应的文本片段
     ===================================== 作业 ===================================== */
+    CHECK_LT(token_id, token_table_.size());
+    return token_table_[token_id];
 }
 ```
 
@@ -538,11 +747,60 @@ void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_siz
 ```
 
 #### 解决思路
-
+##### Dataset
 一开始做作业的时候没看到头文件的注释 `https://github.com/karpathy/llm.c/blob/master/dev/data/tinyshakespeare.py`，完全看不懂应该怎么实现。GPT说这个也不是标准格式。所以只能去找 InfiniTrain 原项目。头文件的字段，哪个有用哪个没用，magic 字段对应 GPT-2 或者 LLaMA 3 是真想不到。。。我一开始以为头全都丢，然后使用的时候自行调用，类似于传命令行参数来决定用什么模型。
 
 所以 dataset 基本就是抄完了，然后读懂了。
 
+##### Tokenizer
+Tokenizer 的部分更混乱。。。首先有了上面的dataset的经验，而且class里有成员，所以头怎么读是比较清楚的。
+
+但是词表格式不知道怎么看。  
+
+```shell
+$ ls -R Data/
+Data/:
+gpt2_124M.bin  gpt2_124M_bf16.bin  gpt2_124M_debug_state.bin  gpt2_logits_reference.bin  gpt2_tokenizer.bin  tinyshakespeare
+
+Data/tinyshakespeare:
+tiny_shakespeare_train.bin  tiny_shakespeare_val.bin
+```
+
+借助gpt，先搞明白文件目录。需要的文件是  
+1. gpt2_logits_reference.bin：gpt的词表  
+2. tiny_shakespeare_train.bin：之前dataset函数需要的整数二进制文件  
+
+所以 dataset 是里有整数序列，可以直接读，但是词表格式没法知道。这时候`xxd`一下：
+
+```xxd
+00000400: 0121 0122 0123 0124 0125 0126 0127 0128  .!.".#.$.%.&.'.(
+00000410: 0129 012a 012b 012c 012d 012e 012f 0130  .).*.+.,.-.../.0
+00000420: 0131 0132 0133 0134 0135 0136 0137 0138  .1.2.3.4.5.6.7.8
+00000430: 0139 013a 013b 013c 013d 013e 013f 0140  .9.:.;.<.=.>.?.@
+00000440: 0141 0142 0143 0144 0145 0146 0147 0148  .A.B.C.D.E.F.G.H
+00000450: 0149 014a 014b 014c 014d 014e 014f 0150  .I.J.K.L.M.N.O.P
+00000460: 0151 0152 0153 0154 0155 0156 0157 0158  .Q.R.S.T.U.V.W.X
+00000470: 0159 015a 015b 015c 015d 015e 015f 0160  .Y.Z.[.\.].^._.`
+00000480: 0161 0162 0163 0164 0165 0166 0167 0168  .a.b.c.d.e.f.g.h
+00000490: 0169 016a 016b 016c 016d 016e 016f 0170  .i.j.k.l.m.n.o.p
+000004a0: 0171 0172 0173 0174 0175 0176 0177 0178  .q.r.s.t.u.v.w.x
+000004b0: 0179 017a 017b 017c 017d 017e 01a1 01a2  .y.z.{.|.}.~....
+...
+00000600: 0220 7402 2061 0268 6502 696e 0272 6502  . t. a.he.in.re.
+00000610: 6f6e 0420 7468 6502 6572 0220 7302 6174  on. the.er. s.at
+00000620: 0220 7702 206f 0265 6e02 2063 0269 7402  . w. o.en. c.it.
+00000630: 6973 0261 6e02 6f72 0265 7302 2062 0265  is.an.or.es. b.e
+00000640: 6402 2066 0369 6e67 0220 7002 6f75 0320  d. f.ing. p.ou. 
+00000650: 616e 0261 6c02 6172 0320 746f 0220 6d03  an.al.ar. to. m.
+00000660: 206f 6603 2069 6e02 2064 0220 6804 2061   of. in. d. h. a
+00000670: 6e64 0269 6302 6173 026c 6503 2074 6803  nd.ic.as.le. th.
+```
+
+借助 GPT，词表格式有定长和变长，这里很明显的是，`0x400` 附近像是符号和字母表，字母之间的间隔不多，`0x600` 附近开始像是有词了，但是看起来有offset。这是后就挺明确是变长的了。借助GPT，`0x400` 开始 `0121` 一个字节的长度，`21` 确实对应`!`。所以读序列的时候，读一个 `kUINT16` 的长度，这是一个词的长度，然后按照值读string并cast存类里面就好了。
+
+具体的实现还是挺简单的，毕竟辅助函数都给写好了。。。
+
+##### 文本生成
 
 
 #### 遇到问题

@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "glog/logging.h"
+// 报错
+#include <sstream>
 
 namespace infini_train {
 
@@ -78,6 +80,24 @@ Tokenizer::Tokenizer(const std::string &filepath) {
     | magic(4B) | version(4B) | vocab_size(4B) | reserved(1012B) | token词表数据       |
     ----------------------------------------------------------------------------------
     ===================================== 作业 ===================================== */
+    std::ifstream fin(filepath, std::ios::binary);
+    CHECK(fin) << "Failed to open file" << filepath;
+
+    const auto header = ReadSeveralBytesFromIfstream(1024, &fin);
+    magic_number_ = BytesToType<uint32_t>(header, 0);
+    const uint32_t version = BytesToType<uint32_t>(header, 4);
+    vocab_size_ = BytesToType<uint32_t>(header, 8);
+    eot_token_ = kEotMap.at(magic_number_);
+    
+    for (uint32_t i = 0; i < vocab_size_; i++) {
+        auto curSizeByte = ReadSeveralBytesFromIfstream(2, &fin);
+        size_t curSize = BytesToType<size_t>(curSizeByte, 0);
+        auto tokenByte = ReadSeveralBytesFromIfstream(curSize, &fin);
+        // memcpy 不能作用于变长类型
+        // std::string token = BytesToType<std::string>(tokenByte, 0);
+        std::string token(tokenByte.begin(), tokenByte.end());
+        token_table_.push_back(token);
+    }
 }
 
 std::string Tokenizer::Decode(uint32_t token_id) const {
@@ -85,7 +105,8 @@ std::string Tokenizer::Decode(uint32_t token_id) const {
     TODO：实现token_id到文本的转换
     功能描述：根据token_id返回对应的文本片段
     ===================================== 作业 ===================================== */
-    return "";
+    CHECK_LT(token_id, token_table_.size());
+    return token_table_[token_id];
 }
 
 void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_size, uint32_t sequence_length,
@@ -111,6 +132,18 @@ void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_siz
         TODO：实现单步文本生成逻辑
         HINT：调用model.Forward推理获取logits，根据推理结果进行随机采样，调用Decode获取文本结果
         ===================================== 作业 ===================================== */
+        // logit 应该是一个张量 vec，只有一个张量，里面矩阵的shape是 (bs, seqLen, vocab_size)
+        // 这里取 bs=0 的tensor，因为只有一个prompt
+        auto logits = model.Forward({x})[0];
+
+        // 看原版，这里的logit是没有归一化的
+        auto logits_softmax = nn::function::Softmax(logits, -1);
+
+        // 我们需要 当前位置的概率 [bs=1, seqLen=t, :]
+        float* logit_ptr = static_cast<float*>(logits_softmax->DataPtr());
+        // 这里要t-1，为啥？
+        x_buff[t] = SampleMult(logit_ptr + (t-1) * vocab_size_, vocab_size_, RandomF32(kRngState));
+        std::cout << Decode(x_buff[t]) << " ";
     }
     std::cout << std::endl;
 }

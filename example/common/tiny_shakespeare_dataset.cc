@@ -124,10 +124,12 @@ TinyShakespeareFile ReadTinyShakespeareFile(const std::string &path, size_t sequ
 
     // 感觉上面很复杂。。。 明明都 if 了， 不如直接 cast
     if (text_file.type == TinyShakespeareType::kUINT16) {
+        CHECK_LE(sequence_length, 1024); // GPT-2: max_seq_length = 1024
         std::vector<uint16_t> vec(num_sequences * sequence_length);
         fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
         for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
     } else if (text_file.type == TinyShakespeareType::kUINT32) {
+        CHECK_LE(sequence_length, 8192); // LLaMA-3: max_seq_length = 8192
         std::vector<int32_t> vec(num_sequences * sequence_length);
         fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
         for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
