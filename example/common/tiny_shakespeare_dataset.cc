@@ -65,13 +65,12 @@ TinyShakespeareFile ReadTinyShakespeareFile(const std::string &path, size_t sequ
     std::ifstream fin(path, std::ios::binary);
     CHECK(fin) << "Failed to open file" << path;
 
-    std::cout << "ReadTinyShakespeareFile Start" << std::endl;
-
     // magic
     // the magic number is used for identify dataset
     // and to specify the kTypeMap
     // how do I know????? (I cheated by looking the InfiniTensor Official Repo)
     // From https://github.com/InfiniTensor/InfiniTrain/blob/master/example/common/tiny_shakespeare_dataset.cc
+    TinyShakespeareFile text_file;
     const auto header = ReadSeveralBytesFromIfstream(1024, &fin);
     const int32_t magic = BytesToType<int32_t>(header, 0); // sec param is offset from beginning
     const int32_t version = BytesToType<int32_t>(header, 4);
@@ -135,14 +134,7 @@ TinyShakespeareFile ReadTinyShakespeareFile(const std::string &path, size_t sequ
         fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
         for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
     }
-
-    std::cout << "ReadTinyShakespeareFile End" << std::endl;
-
-    return TinyShakespeareFile{
-        .type = type,
-        .dims = dims,
-        .tensor = *tensor
-    };
+    return text_file;
 }
 } // namespace
 
@@ -168,7 +160,6 @@ TinyShakespeareFile ReadTinyShakespeareFile(const std::string &path, size_t sequ
 // }
 
 // 用 infinitrain 的 写法，直接成员初始化
-// const 成员必须初始化
 TinyShakespeareDataset::TinyShakespeareDataset(const std::string &filepath, size_t sequence_length)
     : text_file_(ReadTinyShakespeareFile(filepath, sequence_length)), sequence_length_(sequence_length),
       sequence_size_in_bytes_(sequence_length * sizeof(int64_t)), num_samples_(text_file_.dims[0] - 1) {
@@ -177,12 +168,8 @@ TinyShakespeareDataset::TinyShakespeareDataset(const std::string &filepath, size
     // HINT: 调用ReadTinyShakespeareFile加载数据文件
     // =================================== 作业 ===================================
     // 用 infinitrain 的 写法，直接成员初始化
-    std::cout << "ReadTinyShakespeareDataset Start" << std::endl;
-
-    CHECK_EQ(text_file_.dims[1], sequence_length_) << 1;
-    CHECK_EQ(static_cast<int>(text_file_.tensor.Dtype()), static_cast<int>(DataType::kINT64)) << 2;
-
-    std::cout << "ReadTinyShakespeareDataset End" << std::endl;
+    CHECK_EQ(text_file_.dims[1], sequence_length_);
+    CHECK_EQ(static_cast<int>(text_file_.tensor.Dtype()), static_cast<int>(DataType::kINT64));
 }
 
 std::pair<std::shared_ptr<infini_train::Tensor>, std::shared_ptr<infini_train::Tensor>>

@@ -123,12 +123,12 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
     CUBLAS_CHECK(cublasSgemmStridedBatched(
         handle,
         CUBLAS_OP_N, CUBLAS_OP_N,
-        K, M, N,
+        M, K, N,
         &alpha,
-        B, K, strideB,
-        A, N, strideA,
+        A, M, strideB,
+        A, K, strideA,
         &beta,
-        C, K, strideC,
+        C, M, strideC,
         bs));
 
     CUBLAS_CHECK(cublasDestroy(handle));
@@ -188,30 +188,30 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     // grad_A^T [bs, N, M], N
     CUBLAS_CHECK(cublasSgemmStridedBatched(
         handle,
-        CUBLAS_OP_T, CUBLAS_OP_N,
-        N, M, K,
+        CUBLAS_OP_N, CUBLAS_OP_T,
+        M, N, K,
         &alpha,
-        B, K, strideB,
-        grad_C, K, strideC,
+        grad_C, M, strideC,
+        B, N, strideB,
         &beta,
-        grad_A, N, strideA,
+        grad_A, M, strideA,
         bs));
     
     // grad_B = T(A) * grad_C
-    // grad_B = grad_C^T * T(A^T)
+    // grad_B^T = grad_C^T * T(A^T)
 
     // grad_C^T [bs, K, M], K
     // A^T      [bs, N, M], N, op=T
     // grad_B^T [bs, K, N], K
     CUBLAS_CHECK(cublasSgemmStridedBatched(
         handle,
-        CUBLAS_OP_N, CUBLAS_OP_T,
-        K, N, M,
+        CUBLAS_OP_T, CUBLAS_OP_N,
+        N, K, M,
         &alpha,
-        grad_C, K, strideC,
-        A, N, strideA,
+        A, M, strideA,
+        grad_C, M, strideC,
         &beta,
-        grad_B, K, strideB,
+        grad_B, N, strideB,
         bs));
 
     CUBLAS_CHECK(cublasDestroy(handle));

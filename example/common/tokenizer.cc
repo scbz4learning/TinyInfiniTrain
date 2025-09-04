@@ -80,8 +80,6 @@ Tokenizer::Tokenizer(const std::string &filepath) {
     | magic(4B) | version(4B) | vocab_size(4B) | reserved(1012B) | token词表数据       |
     ----------------------------------------------------------------------------------
     ===================================== 作业 ===================================== */
-
-    std::cout << "Tokenizer Start" << std::endl;
     std::ifstream fin(filepath, std::ios::binary);
     CHECK(fin) << "Failed to open file" << filepath;
 
@@ -100,7 +98,6 @@ Tokenizer::Tokenizer(const std::string &filepath) {
         std::string token(tokenByte.begin(), tokenByte.end());
         token_table_.push_back(token);
     }
-    std::cout << "Tokenizer End" << std::endl;
 }
 
 std::string Tokenizer::Decode(uint32_t token_id) const {
@@ -108,10 +105,8 @@ std::string Tokenizer::Decode(uint32_t token_id) const {
     TODO：实现token_id到文本的转换
     功能描述：根据token_id返回对应的文本片段
     ===================================== 作业 ===================================== */
-    std::cout << "Decode Start" << std::endl;
     CHECK_LT(token_id, token_table_.size());
     return token_table_[token_id];
-    std::cout << "Decode End" << std::endl;
 }
 
 void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_size, uint32_t sequence_length,
