@@ -36,7 +36,7 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
     CHECK_GE(input_dim_size, 2);
 
     const auto M = *(input_dims.rbegin() + 1);
-    const auto N = *(input_dims.rbegin());
+    const auto K = *(input_dims.rbegin());
 
     // x: ther can be scalar
     // no it cannot
@@ -44,8 +44,8 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
     const auto other_dim_size = other_dims.size();
     CHECK_GE(other_dims.size(), 2);
 
-    CHECK_EQ(N, *(other_dims.rbegin() + 1));
-    const auto K = *(other_dims.rbegin());
+    CHECK_EQ(K, *(other_dims.rbegin() + 1));
+    const auto N = *(other_dims.rbegin());
 
     // suppose no broadcast
     auto output_dims = input_dims;
@@ -64,9 +64,9 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
     float* C = reinterpret_cast<float *>(output->DataPtr());
 
     // stride
-    const long long strideA = M * N;
-    const long long strideB = N * K;
-    const long long strideC = M * K;
+    const long long strideA = M * K;
+    const long long strideB = K * N;
+    const long long strideC = M * N;
 
     // cuBLAS 会先跳着读，相当于先复制一份改变顺序的矩阵，再1比1传给GPU
     //  （实际当然不需要，只需要换组织方式就行）
@@ -99,36 +99,36 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
     // 
     // 现在每一行是一个向量了，每个向量中包含3个元素，所以主序是3
     //  对的！主序不是向量的个数，而是向量中包含元素的个数，即向量大小
-    //  所以一个矩阵 (bs, m, n) 如果什么都不做，
-    //      会被解释成 (bs, n, m)，主序m，主序是行优先的m
+    //  所以一个矩阵 A (bs, m, n) 如果什么都不做，
+    //  会被解释成 A^T (bs, n, m)，主序n
     //
     // 所以为了计算
     // A * B -> C
-    // (bs, M, N) * (bs, N, K) -> (bs, M, K)
+    // (bs, M, K) * (bs, K, N) -> (bs, M, N)
     // 
-    // 也就是得到内存的 C (bs, M, K)
-    // 需要 cuBLAS的 (bs, K, M) 主序M
+    // 也就是得到内存的 C (bs, M, N)
+    // 需要 cuBLAS的 (bs, N, M)
     //
     // 所以要计算
     // B^T * A^T
     //
-    // B什么也不做就会被解释成(bs, K, N)，所以不用手动调换再转置了，但是主序K
-    // A什么也不做就会被解释成(bs, N, M)，主序N
+    // B什么也不做就会被解释成(bs, N, K)
+    // A什么也不做就会被解释成(bs, K, M)
     //
     // 总结
     // 永远写成 op(B^T) * op(A^T) = C^T
-    // B^T [bs, K, N], K
-    // A^T [bs, N, M], N
-    // C^T [bs, K, M], K
+    // B^T [bs, N, K], N
+    // A^T [bs, K, M], K
+    // C^T [bs, N, M], N
     CUBLAS_CHECK(cublasSgemmStridedBatched(
         handle,
         CUBLAS_OP_N, CUBLAS_OP_N,
-        M, K, N,
+        N, M, K,
         &alpha,
-        A, M, strideB,
+        B, N, strideB,
         A, K, strideA,
         &beta,
-        C, M, strideC,
+        C, N, strideC,
         bs));
 
     CUBLAS_CHECK(cublasDestroy(handle));
@@ -149,15 +149,15 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     CHECK_GE(input_dim_size, 2);
 
     const auto M = *(input_dims.rbegin() + 1);
-    const auto N = *(input_dims.rbegin());
+    const auto K = *(input_dims.rbegin());
 
     // suppose no broadcast
     const auto &other_dims = other->Dims();
     const auto other_dim_size = other_dims.size();
     CHECK_GE(other_dims.size(), 2);
 
-    CHECK_EQ(N, *(other_dims.rbegin() + 1));
-    const auto K = *(other_dims.rbegin());
+    CHECK_EQ(K, *(other_dims.rbegin() + 1));
+    const auto N = *(other_dims.rbegin());
 
     const auto bs = std::accumulate(input_dims.rbegin() + 2, input_dims.rend(), 1, std::multiplies<int64_t>{});
 
@@ -172,44 +172,45 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     const float* A = reinterpret_cast<const float *>(input->DataPtr());
     const float* B = reinterpret_cast<const float *>(other->DataPtr());
     const float* grad_C = reinterpret_cast<const float *>(grad_output->DataPtr());
+    
     float* grad_A = reinterpret_cast<float *>(grad_input->DataPtr());
     float* grad_B = reinterpret_cast<float *>(grad_other->DataPtr());
 
     // Strides
-    const long long strideA = M * N;
-    const long long strideB = N * K;
-    const long long strideC = M * K;
+    const long long strideA = M * K;
+    const long long strideB = K * N;
+    const long long strideC = M * N;
 
     // grad_A = grad_C * B^T
     // grad_A^T = T(B^T) * grad_C^T
     
-    // B^T      [bs, K, N], K, op=T
-    // grad_C^T [bs, K, M], K
-    // grad_A^T [bs, N, M], N
+    // B^T      [bs, N, K], N, op=T
+    // grad_C^T [bs, N, M], N
+    // grad_A^T [bs, K, M], K
     CUBLAS_CHECK(cublasSgemmStridedBatched(
         handle,
-        CUBLAS_OP_N, CUBLAS_OP_T,
-        M, N, K,
+        CUBLAS_OP_T, CUBLAS_OP_N,
+        K, M, N,
         &alpha,
-        grad_C, M, strideC,
         B, N, strideB,
+        grad_C, N, strideC,
         &beta,
-        grad_A, M, strideA,
+        grad_A, K, strideA,
         bs));
     
     // grad_B = T(A) * grad_C
     // grad_B^T = grad_C^T * T(A^T)
 
-    // grad_C^T [bs, K, M], K
-    // A^T      [bs, N, M], N, op=T
-    // grad_B^T [bs, K, N], K
+    // grad_C^T [bs, N, M], N
+    // A^T      [bs, K, M], K, op=T
+    // grad_B^T [bs, N, K], N
     CUBLAS_CHECK(cublasSgemmStridedBatched(
         handle,
-        CUBLAS_OP_T, CUBLAS_OP_N,
+        CUBLAS_OP_N, CUBLAS_OP_T,
         N, K, M,
         &alpha,
-        A, M, strideA,
-        grad_C, M, strideC,
+        grad_C, N, strideC,
+        A, K, strideA,
         &beta,
         grad_B, N, strideB,
         bs));

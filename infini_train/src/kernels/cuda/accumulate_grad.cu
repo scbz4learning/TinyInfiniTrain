@@ -69,8 +69,8 @@ void AdamAccumulateGrad(const std::shared_ptr<Tensor> &grad, const std::shared_p
 
     CHECK_GT(t, 0) << "Adam step t must be >= 1";
 
-    const float bias_correction1 = 1 - std::pow(beta1, t);
-    const float bias_correction2 = 1 - std::pow(beta2, t);
+    const float bias_correction1 = 1.0f - powf(beta1, t);
+    const float bias_correction2 = 1.0f - powf(beta2, t);
     
     int threads_per_block = 256;
     int num_blocks = (n + threads_per_block - 1) / threads_per_block;

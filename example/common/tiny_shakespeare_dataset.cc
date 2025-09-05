@@ -65,6 +65,8 @@ TinyShakespeareFile ReadTinyShakespeareFile(const std::string &path, size_t sequ
     std::ifstream fin(path, std::ios::binary);
     CHECK(fin) << "Failed to open file" << path;
 
+    std::cout << "ReadTinyShakespeareFile Start" << std::endl;
+
     // magic
     // the magic number is used for identify dataset
     // and to specify the kTypeMap
@@ -102,38 +104,41 @@ TinyShakespeareFile ReadTinyShakespeareFile(const std::string &path, size_t sequ
     // let data_ptr_ pointing to the data 
     int64_t *dst = static_cast<int64_t *>(text_file.tensor.DataPtr());
 
-    // // 安全的 union，这里要么存 std::vector<uint16_t>, 要么存 std::vector<int32_t>
-    // std::variant<std::vector<uint16_t>, std::vector<int32_t>> buffer;
-    // if (text_file.type == TinyShakespeareType::kUINT16) {
-    //     CHECK_LE(sequence_length, 1024); // GPT-2: max_seq_length = 1024
-    //     buffer = std::vector<uint16_t>(num_sequences * sequence_length);
-    // } else if (text_file.type == TinyShakespeareType::kUINT32) {
-    //     CHECK_LE(sequence_length, 8192); // LLaMA-3: max_seq_length = 8192
-    //     buffer = std::vector<int32_t>(num_sequences * sequence_length);
-    // }
-
-    // // 用 visit 来访问并 cast。
-    // std::visit(
-    //     // 捕获外部变量，通过 引用
-    //     // [=] 就是捕获 值
-    //     [&](auto &vec) {
-    //         fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
-    //         for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
-    //     },
-    //     buffer);
-
-    // 感觉上面很复杂。。。 明明都 if 了， 不如直接 cast
+    // 安全的 union，这里要么存 std::vector<uint16_t>, 要么存 std::vector<int32_t>
+    std::variant<std::vector<uint16_t>, std::vector<int32_t>> buffer;
     if (text_file.type == TinyShakespeareType::kUINT16) {
         CHECK_LE(sequence_length, 1024); // GPT-2: max_seq_length = 1024
-        std::vector<uint16_t> vec(num_sequences * sequence_length);
-        fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
-        for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
+        buffer = std::vector<uint16_t>(num_sequences * sequence_length);
     } else if (text_file.type == TinyShakespeareType::kUINT32) {
         CHECK_LE(sequence_length, 8192); // LLaMA-3: max_seq_length = 8192
-        std::vector<int32_t> vec(num_sequences * sequence_length);
-        fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
-        for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
+        buffer = std::vector<int32_t>(num_sequences * sequence_length);
     }
+
+    // 用 visit 来访问并 cast。
+    std::visit(
+        // 捕获外部变量，通过 引用
+        // [=] 就是捕获 值
+        [&](auto &vec) {
+            fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
+            for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
+        },
+        buffer);
+
+    // // 感觉上面很复杂。。。 明明都 if 了， 不如直接 cast
+    // if (text_file.type == TinyShakespeareType::kUINT16) {
+    //     CHECK_LE(sequence_length, 1024); // GPT-2: max_seq_length = 1024
+    //     std::vector<uint16_t> vec(num_sequences * sequence_length);
+    //     fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
+    //     for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
+    // } else if (text_file.type == TinyShakespeareType::kUINT32) {
+    //     CHECK_LE(sequence_length, 8192); // LLaMA-3: max_seq_length = 8192
+    //     std::vector<int32_t> vec(num_sequences * sequence_length);
+    //     fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
+    //     for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
+    // }
+
+    std::cout << "ReadTinyShakespeareFile End" << std::endl;
+
     return text_file;
 }
 } // namespace
@@ -168,8 +173,13 @@ TinyShakespeareDataset::TinyShakespeareDataset(const std::string &filepath, size
     // HINT: 调用ReadTinyShakespeareFile加载数据文件
     // =================================== 作业 ===================================
     // 用 infinitrain 的 写法，直接成员初始化
+
+    std::cout << "ReadTinyShakespeareDataset Start" << std::endl;
+
     CHECK_EQ(text_file_.dims[1], sequence_length_);
     CHECK_EQ(static_cast<int>(text_file_.tensor.Dtype()), static_cast<int>(DataType::kINT64));
+    
+    std::cout << "ReadTinyShakespeareDataset End" << std::endl;
 }
 
 std::pair<std::shared_ptr<infini_train::Tensor>, std::shared_ptr<infini_train::Tensor>>

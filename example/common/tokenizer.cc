@@ -80,6 +80,8 @@ Tokenizer::Tokenizer(const std::string &filepath) {
     | magic(4B) | version(4B) | vocab_size(4B) | reserved(1012B) | token词表数据       |
     ----------------------------------------------------------------------------------
     ===================================== 作业 ===================================== */
+    std::cout << "Tokenizer Start" << std::endl;
+
     std::ifstream fin(filepath, std::ios::binary);
     CHECK(fin) << "Failed to open file" << filepath;
 
@@ -98,6 +100,7 @@ Tokenizer::Tokenizer(const std::string &filepath) {
         std::string token(tokenByte.begin(), tokenByte.end());
         token_table_.push_back(token);
     }
+    std::cout << "Tokenizer End" << std::endl;
 }
 
 std::string Tokenizer::Decode(uint32_t token_id) const {
@@ -105,7 +108,9 @@ std::string Tokenizer::Decode(uint32_t token_id) const {
     TODO：实现token_id到文本的转换
     功能描述：根据token_id返回对应的文本片段
     ===================================== 作业 ===================================== */
+    std::cout << "Decode Start" << std::endl;
     CHECK_LT(token_id, token_table_.size());
+    std::cout << "Decode End" << std::endl;
     return token_table_[token_id];
 }
 
@@ -132,6 +137,8 @@ void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_siz
         TODO：实现单步文本生成逻辑
         HINT：调用model.Forward推理获取logits，根据推理结果进行随机采样，调用Decode获取文本结果
         ===================================== 作业 ===================================== */
+        std::cout << "Gen " << t  << std::endl;
+
         // logit 应该是一个张量 vec，只有一个张量，里面矩阵的shape是 (bs, seqLen, vocab_size)
         // 这里取 bs=0 的tensor，因为只有一个prompt
         auto logits = model.Forward({x})[0];
@@ -144,6 +151,7 @@ void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_siz
         // 这里要t-1，为啥？
         x_buff[t] = SampleMult(logit_ptr + (t-1) * vocab_size_, vocab_size_, RandomF32(kRngState));
         std::cout << Decode(x_buff[t]) << " ";
+        std::cout << "Gen " << t << " End" << std::endl;
     }
     std::cout << std::endl;
 }
