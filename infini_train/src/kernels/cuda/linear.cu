@@ -65,7 +65,7 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
 
     // stride
     const long long strideA = M * K;
-    const long long strideB = K * N;
+    const long long strideB = other_dims.size() == input_dims.size() ? K * N : 0;
     const long long strideC = M * N;
 
     // cuBLAS 会先跳着读，相当于先复制一份改变顺序的矩阵，再1比1传给GPU
@@ -178,7 +178,7 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
 
     // Strides
     const long long strideA = M * K;
-    const long long strideB = K * N;
+    const long long strideB = other_dims.size() == input_dims.size() ? K * N : 0;
     const long long strideC = M * N;
 
     // grad_A = grad_C * B^T

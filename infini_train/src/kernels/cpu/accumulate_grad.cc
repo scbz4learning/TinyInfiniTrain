@@ -44,8 +44,8 @@ void AdamAccumulateGrad(const std::shared_ptr<Tensor> &grad, const std::shared_p
 
     // 这里可以不用省略 m_hat, v_hat 表达式，因为Eigen会延迟计算，不会复制一份过来
     // 同时，保持array不用来回转
-    auto m_hat = m->EigenMatrix().array() / (1 - std::pow(beta1, t));
-    auto v_hat = v->EigenMatrix().array() / (1 - std::pow(beta2, t));
+    auto m_hat = m->EigenMatrix().array() / (1.0f - powf(beta1, t));
+    auto v_hat = v->EigenMatrix().array() / (1.0f - powf(beta2, t));
 
     // param->EigenMatrix() -= learning_rate * (m->EigenMatrix / (1 - std::pow(beta1, t))) / ((v->EigenMatrix() / (1 - pow(beta2, t))).array().sqrt() + eps);
     param->EigenMatrix().array() -= learning_rate * m_hat / (v_hat.sqrt() + eps);
