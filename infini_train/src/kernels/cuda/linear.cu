@@ -23,103 +23,47 @@ namespace infini_train::kernels::cuda {
         }                                                                                                              \
     } while (0)
 
-// 每次调用 cublas 肯定效率很低。GPT 给了 `cublasSgemmStridedBatched` 函数
 std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tensor> &other) {
     // =================================== 作业 ===================================
     // TODO：实现CUDA上的矩阵乘法前向计算
     // REF:
     // =================================== 作业 ===================================
-    // Check input is matrices
-    // Check input is matrices
     const auto &input_dims = input->Dims();
     const auto input_dim_size = input_dims.size();
     CHECK_GE(input_dim_size, 2);
 
-    const auto M = *(input_dims.rbegin() + 1);
-    const auto K = *(input_dims.rbegin());
+    const auto M = input_dims[input_dims.size() - 2];
+    const auto K = input_dims[input_dims.size() - 1];
 
-    // x: ther can be scalar
-    // no it cannot
     const auto &other_dims = other->Dims();
     const auto other_dim_size = other_dims.size();
     CHECK_GE(other_dims.size(), 2);
 
-    CHECK_EQ(K, *(other_dims.rbegin() + 1));
+    CHECK_EQ(K, other_dims[other_dims.size() - 2]);
     const auto N = *(other_dims.rbegin());
 
-    // suppose no broadcast
+    // broadcasting should be handled before MatmulForward
+    // where other can have no batch dim
     auto output_dims = input_dims;
     output_dims.back() = other_dims.back();
     auto output = std::make_shared<Tensor>(output_dims, DataType::kFLOAT32);
 
-    const auto bs = std::accumulate(input_dims.rbegin() + 2, input_dims.rend(), 1, std::multiplies<int64_t>{});
+    const auto bs = std::accumulate(input_dims.begin(), input_dims.end() - 2, 1LL, std::multiplies<int64_t>{});
 
     const float alpha = 1.0f;
     const float beta = 0.0f;
     cublasHandle_t handle;
     CUBLAS_CHECK(cublasCreate(&handle));
 
-    const float* A = reinterpret_cast<const float *>(input->DataPtr());
-    const float* B = reinterpret_cast<const float *>(other->DataPtr());
-    float* C = reinterpret_cast<float *>(output->DataPtr());
+    const auto* A = static_cast<float*>(input->DataPtr());
+    const auto* B = static_cast<float*>(other->DataPtr());
+    auto* C = static_cast<float*>(output->DataPtr());
 
     // stride
     const long long strideA = M * K;
-    const long long strideB = other_dims.size() == input_dims.size() ? K * N : 0;
+    const long long strideB = (other_dims.size() == input_dims.size()) ? K * N : 0LL;
     const long long strideC = M * N;
 
-    // cuBLAS 会先跳着读，相当于先复制一份改变顺序的矩阵，再1比1传给GPU
-    //  （实际当然不需要，只需要换组织方式就行）
-    // 所以 (2,3,4) 的矩阵
-    // [[a11, a12, a13, a14
-    //   a21, a22, a23, a24,
-    //   a31, a32, a33, a34],
-    
-    //  [b11, b12, b13, b14
-    //   b21, b22, b23, b24,
-    //   b31, b32, b33, b34]]
-    // 
-    // 内存中应该是
-    // a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34, b11, b12, b13, b14 ...
-    // 
-    // cuBLAS 会复制成
-    // a11, a21, a31, a12, ...
-    //
-    // 然后重排成
-    // 所以 (2,3,4) 的矩阵
-    // [[a11, a21, a31
-    //   a12, a22, a13,
-    //   a13, a23, a33,
-    //   a14, a24, a34],
-    
-    //  [b11, b21, b31
-    //   b12, b22, b13,
-    //   b13, b23, b33,
-    //   b14, b24, b34]]
-    // 
-    // 现在每一行是一个向量了，每个向量中包含3个元素，所以主序是3
-    //  对的！主序不是向量的个数，而是向量中包含元素的个数，即向量大小
-    //  所以一个矩阵 A (bs, m, n) 如果什么都不做，
-    //  会被解释成 A^T (bs, n, m)，主序n
-    //
-    // 所以为了计算
-    // A * B -> C
-    // (bs, M, K) * (bs, K, N) -> (bs, M, N)
-    // 
-    // 也就是得到内存的 C (bs, M, N)
-    // 需要 cuBLAS的 (bs, N, M)
-    //
-    // 所以要计算
-    // B^T * A^T
-    //
-    // B什么也不做就会被解释成(bs, N, K)
-    // A什么也不做就会被解释成(bs, K, M)
-    //
-    // 总结
-    // 永远写成 op(B^T) * op(A^T) = C^T
-    // B^T [bs, N, K], N
-    // A^T [bs, K, M], K
-    // C^T [bs, N, M], N
     CUBLAS_CHECK(cublasSgemmStridedBatched(
         handle,
         CUBLAS_OP_N, CUBLAS_OP_N,
@@ -135,7 +79,18 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
     return output;
 }
 
-// 每次调用 cublas 肯定效率很低。GPT 给了 `cublasSgemmStridedBatched` 函数
+__global__ void ReduceGradSumKernel(const float *tmp_ptr, float *real_ptr, int bs, int stride) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= stride) return;
+
+    float sum = 0.0f;
+    for (int b = 0; b < bs; b++) {
+        sum += tmp_ptr[b * stride + idx];
+    }
+
+    real_ptr[idx] = sum;
+}
+
 std::tuple<std::shared_ptr<Tensor>, std::shared_ptr<Tensor>>
 MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tensor> &other,
                const std::shared_ptr<Tensor> &grad_output) {
@@ -143,38 +98,49 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     // TODO：实现CUDA上的矩阵乘法反向传播
     // REF:
     // =================================== 作业 ===================================
-    // Check input is matrices
     const auto &input_dims = input->Dims();
     const auto input_dim_size = input_dims.size();
     CHECK_GE(input_dim_size, 2);
 
-    const auto M = *(input_dims.rbegin() + 1);
-    const auto K = *(input_dims.rbegin());
+    const auto M = input_dims[input_dim_size - 2];
+    const auto K = input_dims[input_dim_size - 1];
 
-    // suppose no broadcast
+    // broadcasting should be handled before MatmulForward
+    // where other can have no batch dim
     const auto &other_dims = other->Dims();
     const auto other_dim_size = other_dims.size();
-    CHECK_GE(other_dims.size(), 2);
+    CHECK_GE(other_dim_size, 2);
 
-    CHECK_EQ(K, *(other_dims.rbegin() + 1));
-    const auto N = *(other_dims.rbegin());
-
-    const auto bs = std::accumulate(input_dims.rbegin() + 2, input_dims.rend(), 1, std::multiplies<int64_t>{});
-
+    CHECK_EQ(K, other_dims[other_dim_size - 2]);
+    const auto N = other_dims[other_dim_size - 1];
+    
     auto grad_input = std::make_shared<Tensor>(input_dims, DataType::kFLOAT32);
+    // if other has no batch, grad_other should not have batch too
     auto grad_other = std::make_shared<Tensor>(other_dims, DataType::kFLOAT32);
+
+    const auto bs = std::accumulate(input_dims.begin(), input_dims.end() - 2, 1LL, std::multiplies<int64_t>{});
+
+    const auto* A_ptr  = static_cast<float*>(input->DataPtr());
+    const auto* B_ptr  = static_cast<float*>(other->DataPtr());
+    const auto* grad_C_ptr = static_cast<float*>(grad_output->DataPtr());
+
+    auto grad_A_ptr  = static_cast<float*>(grad_input->DataPtr());
+    auto grad_B_ptr  = static_cast<float*>(grad_other->DataPtr());
+
+    bool B_has_batch = other_dim_size == input_dim_size;
+
+    float* grad_B_tmp_ptr;
+    if (!B_has_batch) {
+        cudaMalloc(&grad_B_tmp_ptr, bs * K * N * sizeof(float));
+        cudaMemset(grad_B_tmp_ptr, 0, bs * K * N * sizeof(float));
+    } else {
+        grad_B_tmp_ptr = grad_B_ptr;
+    }
 
     const float alpha = 1.0f;
     const float beta = 0.0f;
     cublasHandle_t handle;
     CUBLAS_CHECK(cublasCreate(&handle));
-
-    const float* A = reinterpret_cast<const float *>(input->DataPtr());
-    const float* B = reinterpret_cast<const float *>(other->DataPtr());
-    const float* grad_C = reinterpret_cast<const float *>(grad_output->DataPtr());
-    
-    float* grad_A = reinterpret_cast<float *>(grad_input->DataPtr());
-    float* grad_B = reinterpret_cast<float *>(grad_other->DataPtr());
 
     // Strides
     const long long strideA = M * K;
@@ -192,10 +158,10 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
         CUBLAS_OP_T, CUBLAS_OP_N,
         K, M, N,
         &alpha,
-        B, N, strideB,
-        grad_C, N, strideC,
+        B_ptr, N, strideB,
+        grad_C_ptr, N, strideC,
         &beta,
-        grad_A, K, strideA,
+        grad_A_ptr, K, strideA,
         bs));
     
     // grad_B = T(A) * grad_C
@@ -209,11 +175,21 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
         CUBLAS_OP_N, CUBLAS_OP_T,
         N, K, M,
         &alpha,
-        grad_C, N, strideC,
-        A, K, strideA,
+        grad_C_ptr, N, strideC,
+        A_ptr, K, strideA,
         &beta,
-        grad_B, N, strideB,
+        grad_B_tmp_ptr, N, strideB, // use temp
         bs));
+    
+    // Reduce grad_B if no batch dim
+    if (!B_has_batch) {
+        int threads_per_block = 256;
+        int num_blocks = (K * N + threads_per_block - 1) / threads_per_block;
+        ReduceGradSumKernel<<<num_blocks, threads_per_block>>>(
+            grad_B_tmp_ptr, grad_B_ptr, bs, K*N);
+        cudaDeviceSynchronize();
+        cudaFree(grad_B_tmp_ptr);
+    }
 
     CUBLAS_CHECK(cublasDestroy(handle));
 
