@@ -92,50 +92,51 @@ TinyShakespeareFile ReadTinyShakespeareFile(const std::string &path, size_t sequ
     // The signature of `dims` is `std::vector<int64_t>`, so it is nec to map before use
     // x: There is no padding processing!
     // Actually there is, the last sequence will be dropped if not complete
-    text_file.dims.assign(num_sequences, static_cast<int64_t>(sequence_length));
+    text_file.dims.assign({num_sequences, static_cast<int64_t>(sequence_length)});
 
     const int data_size_in_bytes
         = std::accumulate(text_file.dims.begin(),
                         text_file.dims.end(),
-                        kTypeToSize.at(text_file.type), // change the init value here
-                         std::multiplies<int>{}); // use {} instead
+                        1, // change the init value here
+                         std::multiplies<int>{} // use {} instead
+          ) * kTypeToSize.at(text_file.type);
     // Init tensor, type is kINIT64? why?
     text_file.tensor = infini_train::Tensor(text_file.dims, DataType::kINT64);
     // let data_ptr_ pointing to the data 
     int64_t *dst = static_cast<int64_t *>(text_file.tensor.DataPtr());
 
-    // 安全的 union，这里要么存 std::vector<uint16_t>, 要么存 std::vector<int32_t>
-    std::variant<std::vector<uint16_t>, std::vector<int32_t>> buffer;
-    if (text_file.type == TinyShakespeareType::kUINT16) {
-        CHECK_LE(sequence_length, 1024); // GPT-2: max_seq_length = 1024
-        buffer = std::vector<uint16_t>(num_sequences * sequence_length);
-    } else if (text_file.type == TinyShakespeareType::kUINT32) {
-        CHECK_LE(sequence_length, 8192); // LLaMA-3: max_seq_length = 8192
-        buffer = std::vector<int32_t>(num_sequences * sequence_length);
-    }
-
-    // 用 visit 来访问并 cast。
-    std::visit(
-        // 捕获外部变量，通过 引用
-        // [=] 就是捕获 值
-        [&](auto &vec) {
-            fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
-            for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
-        },
-        buffer);
-
-    // // 感觉上面很复杂。。。 明明都 if 了， 不如直接 cast
+    // // 安全的 union，这里要么存 std::vector<uint16_t>, 要么存 std::vector<int32_t>
+    // std::variant<std::vector<uint16_t>, std::vector<int32_t>> buffer;
     // if (text_file.type == TinyShakespeareType::kUINT16) {
     //     CHECK_LE(sequence_length, 1024); // GPT-2: max_seq_length = 1024
-    //     std::vector<uint16_t> vec(num_sequences * sequence_length);
-    //     fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
-    //     for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
+    //     buffer = std::vector<uint16_t>(num_sequences * sequence_length);
     // } else if (text_file.type == TinyShakespeareType::kUINT32) {
     //     CHECK_LE(sequence_length, 8192); // LLaMA-3: max_seq_length = 8192
-    //     std::vector<int32_t> vec(num_sequences * sequence_length);
-    //     fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
-    //     for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
+    //     buffer = std::vector<int32_t>(num_sequences * sequence_length);
     // }
+
+    // // 用 visit 来访问并 cast。
+    // std::visit(
+    //     // 捕获外部变量，通过 引用
+    //     // [=] 就是捕获 值
+    //     [&](auto &vec) {
+    //         fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
+    //         for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
+    //     },
+    //     buffer);
+
+    // 感觉上面很复杂。。。 明明都 if 了， 不如直接 cast
+    if (text_file.type == TinyShakespeareType::kUINT16) {
+        CHECK_LE(sequence_length, 1024); // GPT-2: max_seq_length = 1024
+        std::vector<uint16_t> vec(num_sequences * sequence_length);
+        fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
+        for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
+    } else if (text_file.type == TinyShakespeareType::kUINT32) {
+        CHECK_LE(sequence_length, 8192); // LLaMA-3: max_seq_length = 8192
+        std::vector<int32_t> vec(num_sequences * sequence_length);
+        fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
+        for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
+    }
 
     std::cout << "ReadTinyShakespeareFile End" << std::endl;
 

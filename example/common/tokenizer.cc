@@ -92,8 +92,8 @@ Tokenizer::Tokenizer(const std::string &filepath) {
     eot_token_ = kEotMap.at(magic_number_);
     
     for (uint32_t i = 0; i < vocab_size_; i++) {
-        auto curSizeByte = ReadSeveralBytesFromIfstream(2, &fin);
-        size_t curSize = BytesToType<size_t>(curSizeByte, 0);
+        auto curSizeByte = ReadSeveralBytesFromIfstream(1, &fin);
+        auto curSize = BytesToType<uint8_t>(curSizeByte, 0);
         auto tokenByte = ReadSeveralBytesFromIfstream(curSize, &fin);
         // memcpy 不能作用于变长类型
         // std::string token = BytesToType<std::string>(tokenByte, 0);
@@ -109,7 +109,7 @@ std::string Tokenizer::Decode(uint32_t token_id) const {
     功能描述：根据token_id返回对应的文本片段
     ===================================== 作业 ===================================== */
     std::cout << "Decode Start" << std::endl;
-    CHECK_LT(token_id, token_table_.size());
+    CHECK_LT(token_id, token_table_.size()) << "Too much tokens";
     std::cout << "Decode End" << std::endl;
     return token_table_[token_id];
 }
