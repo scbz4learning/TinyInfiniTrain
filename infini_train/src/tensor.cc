@@ -383,16 +383,19 @@ void Tensor::Backward(std::shared_ptr<Tensor> gradient, bool retain_graph, bool 
     // =================================== 作业 ===================================
     // 叶子节点的建立AccumulateGrad类的过程也在BackwardPartial里面了
     CHECK(requires_grad_);
-    if (!gradient) {
-        // gradient 是可以为空的，默认值是nullptr。定义在.h文件。不造一个gradient会segfault
-        // 要造一个全1的Tensor类
-        // 根据torch语法想到Ones，搜索到nn functional里有Ones
-        // 但是用init的更好，因为头文件里有了
-        // function里的也是调用的init
-        auto ones = std::make_shared<Tensor>(dims_, dtype_, GetDevice());
-        gradient = infini_train::nn::init::Ones(ones);
+    if (grad_fn_) {
+        if (!gradient) {
+            // gradient 是可以为空的，默认值是nullptr。定义在.h文件。不造一个gradient会segfault
+            // 要造一个全1的Tensor类
+            // 根据torch语法想到Ones，搜索到nn functional里有Ones
+            // 但是用init的更好，因为头文件里有了
+            // function里的也是调用的init
+            auto ones = std::make_shared<Tensor>(dims_, dtype_, GetDevice());
+            gradient = infini_train::nn::init::Ones(ones);
+        } else 
+            for (int idx = 0; idx < dims_.size(); ++idx) { CHECK_EQ(dims_[idx], gradient->Dims()[idx]); }
+        grad_fn_->BackwardPartial(gradient, output_idx_);
     }
-    grad_fn_->BackwardPartial(gradient, output_idx_);
 }
 
 void Tensor::ZeroGrad() {
