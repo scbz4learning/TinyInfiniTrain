@@ -300,10 +300,11 @@ std::shared_ptr<Tensor> Tensor::Flatten(int64_t start, int64_t end) {
     CHECK_GE(end, start);
     CHECK_LT(end, dims_.size());
     
-    const auto flattened_dim = std::accumulate(dims_.begin() + start, dims_.begin() + end + 1, 1, std::multiplies<int64_t>{});
+    const auto flattened_dim = std::accumulate(dims_.begin() + start, dims_.begin() + end + 1, (int64_t){1}, std::multiplies<int64_t>{});
+
     auto new_shape = dims_;
-    new_shape[end] = flattened_dim;
-    new_shape.erase(new_shape.begin() + start, new_shape.begin() + end);
+    new_shape.erase(new_shape.begin() + start, new_shape.begin() + end + 1);
+    new_shape.insert(new_shape.begin() + start, flattened_dim);  
 
     return Contiguous()->View(new_shape);
 }
@@ -388,7 +389,7 @@ void Tensor::Backward(std::shared_ptr<Tensor> gradient, bool retain_graph, bool 
         // 根据torch语法想到Ones，搜索到nn functional里有Ones
         // 但是用init的更好，因为头文件里有了
         // function里的也是调用的init
-        auto ones = std::make_shared<Tensor>(dims_, DataType::kFLOAT32);
+        auto ones = std::make_shared<Tensor>(dims_, dtype_, GetDevice());
         gradient = infini_train::nn::init::Ones(ones);
     }
     grad_fn_->BackwardPartial(gradient, output_idx_);
