@@ -132,26 +132,25 @@ void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_siz
     auto x = std::make_shared<infini_train::Tensor>(x_tensor.To(device));
     uint64_t kRngState = kRngState;
     LOG(INFO) << "start generate text:";
+    // set cpu device
+    const auto cpu_device = Device{};
     for (int t = prompt_len; t < text_length; t++) {
         /* ===================================== 作业 =====================================
         TODO：实现单步文本生成逻辑
         HINT：调用model.Forward推理获取logits，根据推理结果进行随机采样，调用Decode获取文本结果
         ===================================== 作业 ===================================== */
-        std::cout << "Gen " << t  << std::endl;
+        auto logits_device = model.Forward({x})[0];
+        auto logits_device_norm = nn::function::Softmax(logits_device, -1);
+        auto logits_cpu_norm  = logits_device_norm->To(cpu_device);
 
-        // logit 应该是一个张量 vec，只有一个张量，里面矩阵的shape是 (bs, seqLen, vocab_size)
-        // 这里取 bs=0 的tensor，因为只有一个prompt
-        auto logits = model.Forward({x})[0];
+        auto data_cpu = logits_cpu_norm.DataPtr();
+        auto probs_cpu = static_cast<float *>(data_cpu) + (t - 1) * vocab_size_;
 
-        // 看原版，这里的logit是没有归一化的
-        auto logits_softmax = nn::function::Softmax(logits, -1);
-
-        // 我们需要 当前位置的概率 [bs=1, seqLen=t, :]
-        float* logit_ptr = static_cast<float*>(logits_softmax->DataPtr());
-        // 这里要t-1，为啥？
-        x_buff[t] = SampleMult(logit_ptr + (t-1) * vocab_size_, vocab_size_, RandomF32(kRngState));
-        std::cout << Decode(x_buff[t]) << " ";
-        std::cout << "Gen " << t << " End" << std::endl;
+        x = std::make_shared<infini_train::Tensor>(x->To(cpu_device));
+        auto x_data_cpu = static_cast<float *>(x->DataPtr());
+        auto next_token = SampleMult(probs_cpu, vocab_size_, kRngState);
+        x_data_cpu[t] = next_token;
+        std::cout << next_token << " ";
     }
     std::cout << std::endl;
 }
