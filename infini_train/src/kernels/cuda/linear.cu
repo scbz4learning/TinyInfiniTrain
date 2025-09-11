@@ -46,7 +46,7 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
     // where other can have no batch dim
     auto output_dims = input_dims;
     output_dims.back() = other_dims.back();
-    auto output = std::make_shared<Tensor>(output_dims, DataType::kFLOAT32);
+    auto output = std::make_shared<Tensor>(output_dims, DataType::kFLOAT32, input->GetDevice());
 
     const auto bs = std::accumulate(input_dims.begin(), input_dims.end() - 2, 1LL, std::multiplies<int64_t>{});
 
@@ -114,9 +114,9 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     CHECK_EQ(K, other_dims[other_dim_size - 2]);
     const auto N = other_dims[other_dim_size - 1];
     
-    auto grad_input = std::make_shared<Tensor>(input_dims, DataType::kFLOAT32);
+    auto grad_input = std::make_shared<Tensor>(input_dims, DataType::kFLOAT32, input->GetDevice());
     // if other has no batch, grad_other should not have batch too
-    auto grad_other = std::make_shared<Tensor>(other_dims, DataType::kFLOAT32);
+    auto grad_other = std::make_shared<Tensor>(other_dims, DataType::kFLOAT32, other->GetDevice());
 
     const auto bs = std::accumulate(input_dims.begin(), input_dims.end() - 2, 1LL, std::multiplies<int64_t>{});
 
