@@ -22,9 +22,6 @@
 #include "infini_train/include/nn/modules/sparse.h"
 #include "infini_train/include/tensor.h"
 
-// 报错
-#include <sstream>
-
 namespace nn = infini_train::nn;
 
 namespace {

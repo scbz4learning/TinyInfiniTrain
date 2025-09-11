@@ -8,8 +8,6 @@
 #include <vector>
 
 #include "glog/logging.h"
-// 报错
-#include <sstream>
 
 namespace infini_train {
 
@@ -108,9 +106,7 @@ std::string Tokenizer::Decode(uint32_t token_id) const {
     TODO：实现token_id到文本的转换
     功能描述：根据token_id返回对应的文本片段
     ===================================== 作业 ===================================== */
-    std::cout << "Decode Start" << std::endl;
     CHECK_LT(token_id, token_table_.size()) << "Too much tokens";
-    std::cout << "Decode End" << std::endl;
     return token_table_[token_id];
 }
 
@@ -139,8 +135,6 @@ void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_siz
         TODO：实现单步文本生成逻辑
         HINT：调用model.Forward推理获取logits，根据推理结果进行随机采样，调用Decode获取文本结果
         ===================================== 作业 ===================================== */
-        x = std::make_shared<infini_train::Tensor>(x->To(device));
-
         auto logits_device = model.Forward({x})[0];
         auto logits_device_norm = nn::function::Softmax(logits_device, -1);
         auto logits_cpu_norm  = logits_device_norm->To(cpu_device);
@@ -152,7 +146,9 @@ void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_siz
         auto x_data_cpu = static_cast<int64_t *>(x->DataPtr());
         auto next_token = SampleMult(probs_cpu, vocab_size_, RandomF32(kRngState));
         x_data_cpu[t] = next_token;
-        std::cout << Decode(next_token) << " ";
+        std::cout << Decode(next_token);
+
+        x = std::make_shared<infini_train::Tensor>(x->To(device));
     }
     std::cout << std::endl;
 }

@@ -45,7 +45,6 @@ __global__ void AdamAccumulateGradKernel(float* param_ptr,
         float m_hat = m_t / bias_correction1;
         float v_hat = v_t / bias_correction2;
         param_ptr[idx] -= learning_rate * m_hat / (sqrtf(v_hat) + eps);
-
     }
 }
 
@@ -56,7 +55,6 @@ void AdamAccumulateGrad(const std::shared_ptr<Tensor> &grad, const std::shared_p
     // TODO：实现Adam优化器的梯度累积和参数更新
     // REF:
     // =================================== 作业 ===================================
-    // check
     CHECK(grad != nullptr);
     CHECK(param != nullptr);
     CHECK(m != nullptr);

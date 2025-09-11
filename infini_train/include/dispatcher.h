@@ -51,10 +51,6 @@ public:
         // TODO：实现kernel注册机制
         // 功能描述：将kernel函数与设备类型、名称绑定
         // =================================== 作业 ===================================
-
-        // without this, there is no warning when adding an existed kernel
-        // however, what is the problem? 
-        // It seems that re-register multiple times should not affect much?
         CHECK(!key_to_kernel_map_.contains(key)) 
             << "Kernel already registered: " << key.second;
         key_to_kernel_map_.emplace(key, KernelFunction(kernel));

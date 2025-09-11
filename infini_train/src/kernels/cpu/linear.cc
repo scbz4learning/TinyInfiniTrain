@@ -24,13 +24,11 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
 
     const auto &other_dims = other->Dims();
     const auto other_dim_size = other_dims.size();
-    CHECK_GE(other_dims.size(), 2);
+    CHECK_EQ(other_dims.size(), input_dim_size);
 
     CHECK_EQ(K, other_dims[other_dims.size() - 2]);
     const auto N = other_dims[other_dims.size() - 1];
 
-    // broadcasting should be handled before MatmulForward
-    // where other can have no batch dim
     auto output_dims = input_dims;
     output_dims.back() = other_dims.back();
     auto output = std::make_shared<Tensor>(output_dims, DataType::kFLOAT32);
@@ -41,19 +39,16 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
     const auto* B_ptr  = static_cast<float*>(other->DataPtr());
     auto* C_ptr = static_cast<float*>(output->DataPtr());
 
-    bool B_has_batch = other_dim_size == input_dim_size;
-
     for (auto b = 0LL; b < bs; b++) {
         Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
             A(A_ptr + b * M * K, M, K);
         Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-            B(B_ptr + (B_has_batch ? b * K * N : 0), K, N);
+            B(B_ptr + b * K * N, K, N);
         Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
             C(C_ptr + b * M * N, M, N);
 
         C.noalias() = A * B; 
     }
-    
     return output;
 }
 
@@ -71,11 +66,9 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     const auto M = input_dims[input_dim_size - 2];
     const auto K = input_dims[input_dim_size - 1];
 
-    // broadcasting should be handled before MatmulForward
-    // where other can have no batch dim
     const auto &other_dims = other->Dims();
     const auto other_dim_size = other_dims.size();
-    CHECK_GE(other_dim_size, 2);
+    CHECK_EQ(other_dim_size, input_dim_size);
 
     CHECK_EQ(K, other_dims[other_dim_size - 2]);
     const auto N = other_dims[other_dim_size - 1];
@@ -86,7 +79,6 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     CHECK_EQ(N, grad_output_dims[grad_output_dim_size - 1]);
 
     auto grad_input = std::make_shared<Tensor>(input_dims, DataType::kFLOAT32);
-    // if other has no batch, grad_other should not have batch too
     auto grad_other = std::make_shared<Tensor>(other_dims, DataType::kFLOAT32);
 
     const auto bs = std::accumulate(input_dims.begin(), input_dims.end() - 2, 1LL, std::multiplies<int64_t>{});
@@ -98,15 +90,6 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     auto grad_A_ptr  = static_cast<float*>(grad_input->DataPtr());
     auto grad_B_ptr  = static_cast<float*>(grad_other->DataPtr());
 
-    bool B_has_batch = other_dim_size == input_dim_size;
-
-    // if other has no batch, grad_other should be accumulately added
-    if (!B_has_batch) {
-        Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> grad_B_zero(
-            grad_B_ptr, K, N);
-        grad_B_zero.setZero();
-    }
-
     for (auto b = 0LL; b < bs; b++){
         Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
             A(A_ptr + b * M * K, M, K);
@@ -114,16 +97,16 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
             grad_A(grad_A_ptr + b * M * K, M, K);
 
         Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-            B(B_ptr + (B_has_batch ? b * K * N : 0), K, N);
+            B(B_ptr + b * K * N, K, N);
         Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-            grad_B(grad_B_ptr + (B_has_batch ? b * K * N : 0), K, N);
+            grad_B(grad_B_ptr + b * K * N, K, N);
         
         Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
             grad_C(grad_C_ptr + b * M * N, M, N);
 
         grad_A.noalias() = grad_C * B.transpose();
         // if other has no batch, grad_other should be accumulately added
-        grad_B.noalias() += A.transpose() * grad_C;
+        grad_B.noalias() = A.transpose() * grad_C;
     }
     return {grad_input, grad_other};
 }
