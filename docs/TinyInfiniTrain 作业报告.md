@@ -1,10 +1,8 @@
 # TinyInfiniTrain 作业报告
 
-为了方便整理学习过程, Infinitensor的学习笔记都单独建了一个repo, [本科目的完整学习过程在这里](https://github.com/scbz4learning/Infinitensor/tree/main/docs/Stage_1/2_TinyInfiniTrain.md).
----
-
 ## 一、test 通过截图
-
+![Result: Failed on GPT2](result-failed-on-GPT2.png)
+![GPT2 Result](GPT2-Result.png)
 ## 二、作业步骤
 
 > 将代码填入下面代码块中指定位置，并详细描述完成该作业的解决思路和遇到的问题。
@@ -26,11 +24,6 @@ std::vector<std::shared_ptr<Tensor>> Neg::Forward(const std::vector<std::shared_
     CHECK_EQ(input_tensors.size(), 1); // 取反操作只需要一个对象
     const auto &input = input_tensors[0];
 
-    // there is no need for previous grad. The \partial (-x) = x, which means we need current grad only.
-    // Might be the only special case.
-    // // No function to setup context in the class
-    // saved_tensors_ = {input};
-
     auto device = input->GetDevice().Type();
     auto kernel = Dispatcher::Instance().GetKernel({device, "NegForward"});
     return {kernel.Call<std::shared_ptr<Tensor>>(input)};
@@ -46,7 +39,6 @@ std::vector<std::shared_ptr<Tensor>> Neg::Backward(const std::vector<std::shared
 
     auto device = grad_output->GetDevice().Type();
     auto kernel = Dispatcher::Instance().GetKernel({device, "NegBackward"});
-    // return {kernel.Call<std::shared_ptr<Tensor>>(grad_output, input)};
     return {kernel.Call<std::shared_ptr<Tensor>>(grad_output)};
 }
 ```
@@ -54,9 +46,9 @@ std::vector<std::shared_ptr<Tensor>> Neg::Backward(const std::vector<std::shared
 #### 解决思路
 
 仿照别的算子写。写的过程中，观察怎么获取device和kernel的。
+注意 `Neg` 的反向传播不需要 `grad_output`, 因为 $(-x)' = -1$.  
 
 #### 遇到问题
-`Neg` 的反向传播不需要 `grad_output`, 因为 $(-x)' = -1$.  
 
 
 ### 作业二：实现矩阵乘法
@@ -75,39 +67,37 @@ std::vector<std::shared_ptr<Tensor>> Neg::Backward(const std::vector<std::shared
         // TODO：实现CPU上的矩阵乘法前向计算
         // REF:
         // =================================== 作业 ===================================
-
-        // Check input is matrices
         const auto &input_dims = input->Dims();
         const auto input_dim_size = input_dims.size();
         CHECK_GE(input_dim_size, 2);
 
-        const auto M = *(input_dims.rbegin() + 1);
-        const auto N = *(input_dims.rbegin());
+        const auto M = input_dims[input_dims.size() - 2];
+        const auto K = input_dims[input_dims.size() - 1];
 
-        // x: ther can be scalar
-        // no it cannot
         const auto &other_dims = other->Dims();
         const auto other_dim_size = other_dims.size();
-        CHECK_GE(other_dims.size(), 2);
+        CHECK_EQ(other_dims.size(), input_dim_size);
 
-        CHECK_EQ(N, *(other_dims.rbegin() + 1));
-        const auto K = *(other_dims.rbegin());
+        CHECK_EQ(K, other_dims[other_dims.size() - 2]);
+        const auto N = other_dims[other_dims.size() - 1];
 
-        // suppose no broadcast
         auto output_dims = input_dims;
         output_dims.back() = other_dims.back();
         auto output = std::make_shared<Tensor>(output_dims, DataType::kFLOAT32);
 
-        const auto bs = std::accumulate(input_dims.rbegin() + 2, input_dims.rend(), 1, std::multiplies<int64_t>{});
-        for (int b = 0; b < bs; b++) {
-            Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-                A(reinterpret_cast<float *>(input->DataPtr()) + b * M * N, M, N);
+        const auto bs = std::accumulate(input_dims.begin(), input_dims.end() - 2, 1LL, std::multiplies<int64_t>{});
 
-            Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-                B(reinterpret_cast<float *>(other->DataPtr()) + b * N * K, N, K);
+        const auto* A_ptr  = static_cast<float*>(input->DataPtr());
+        const auto* B_ptr  = static_cast<float*>(other->DataPtr());
+        auto* C_ptr = static_cast<float*>(output->DataPtr());
 
+        for (auto b = 0LL; b < bs; b++) {
+            Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
+                A(A_ptr + b * M * K, M, K);
+            Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
+                B(B_ptr + b * K * N, K, N);
             Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-                C(reinterpret_cast<float *>(output->DataPtr()) + b * M * K, M, K);
+                C(C_ptr + b * M * N, M, N);
 
             C.noalias() = A * B; 
         }
@@ -115,49 +105,60 @@ std::vector<std::shared_ptr<Tensor>> Neg::Backward(const std::vector<std::shared
     }
 
     std::tuple<std::shared_ptr<Tensor>, std::shared_ptr<Tensor>>
-        MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tensor> &other,
-                    const std::shared_ptr<Tensor> &grad_output) {
+    MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tensor> &other,
+                const std::shared_ptr<Tensor> &grad_output) {
         // =================================== 作业 ===================================
         // TODO：实现CPU上的矩阵乘法反向传播
         // REF:
         // =================================== 作业 ===================================
-            
         const auto &input_dims = input->Dims();
         const auto input_dim_size = input_dims.size();
         CHECK_GE(input_dim_size, 2);
 
-        const auto M = *(input_dims.rbegin() + 1);
-        const auto N = *(input_dims.rbegin());
+        const auto M = input_dims[input_dim_size - 2];
+        const auto K = input_dims[input_dim_size - 1];
 
         const auto &other_dims = other->Dims();
         const auto other_dim_size = other_dims.size();
-        CHECK_GE(other_dims.size(), 2);
+        CHECK_EQ(other_dim_size, input_dim_size);
 
-        CHECK_EQ(N, *(other_dims.rbegin() + 1));
-        const auto K = *(other_dims.rbegin());
+        CHECK_EQ(K, other_dims[other_dim_size - 2]);
+        const auto N = other_dims[other_dim_size - 1];
 
-        // suppose no broadcast
-        const auto bs = std::accumulate(input_dims.rbegin() + 2, input_dims.rend(), 1, std::multiplies<int64_t>{});
+        const auto &grad_output_dims = grad_output->Dims();
+        const auto grad_output_dim_size = grad_output_dims.size();
+        CHECK_EQ(M, grad_output_dims[grad_output_dim_size - 2]);
+        CHECK_EQ(N, grad_output_dims[grad_output_dim_size - 1]);
 
         auto grad_input = std::make_shared<Tensor>(input_dims, DataType::kFLOAT32);
         auto grad_other = std::make_shared<Tensor>(other_dims, DataType::kFLOAT32);
 
-        for (auto b = 0; b < bs; b++){
-            Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-                A(reinterpret_cast<float *>(input->DataPtr()) + b * M * N, M, N);
-            Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-                grad_A(reinterpret_cast<float *>(grad_input->DataPtr()) + b * M * N, M, N);
+        const auto bs = std::accumulate(input_dims.begin(), input_dims.end() - 2, 1LL, std::multiplies<int64_t>{});
 
-            Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-                B(reinterpret_cast<float *>(other->DataPtr()) + b * N * K, N, K);
-            Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-                grad_B(reinterpret_cast<float *>(grad_other->DataPtr()) + b * N * K, N, K);
+        const auto* A_ptr  = static_cast<float*>(input->DataPtr());
+        const auto* B_ptr  = static_cast<float*>(other->DataPtr());
+        const auto* grad_C_ptr = static_cast<float*>(grad_output->DataPtr());
 
+        auto grad_A_ptr  = static_cast<float*>(grad_input->DataPtr());
+        auto grad_B_ptr  = static_cast<float*>(grad_other->DataPtr());
+
+        for (auto b = 0LL; b < bs; b++){
+            Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
+                A(A_ptr + b * M * K, M, K);
             Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-                grad_C(reinterpret_cast<float *>(grad_output->DataPtr()) + b * M * K, M, K);
+                grad_A(grad_A_ptr + b * M * K, M, K);
+
+            Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
+                B(B_ptr + b * K * N, K, N);
+            Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
+                grad_B(grad_B_ptr + b * K * N, K, N);
+            
+            Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
+                grad_C(grad_C_ptr + b * M * N, M, N);
 
             grad_A.noalias() = grad_C * B.transpose();
-            grad_B.noalias() = A.transpose() * grad_C; 
+            // if other has no batch, grad_other should be accumulately added
+            grad_B.noalias() = A.transpose() * grad_C;
         }
         return {grad_input, grad_other};
     }
@@ -306,10 +307,54 @@ CPU 部分：参考 `LinearForward` 和 `LinerBackward` 的实现写.
 GPU 部分：参考 CPU 写。
 想到 cuda 编程说的，不要用 for 循环，在 host 和 GPU 之前传多次。所以借助了 GPT 换成了 batched 版本
 
-#### 遇到问题
 CPU 部分, batch size 是要单独拿出来的. `Eigen` 并不支持高维矩阵的直接计算, 因为会折叠成向量, 导致 \[bs1, M, N\] 和 \[bs2, N, K\] 中, N 对不齐. 解决的办法是先 map. 数据指针在 class Tensor 的 cc 文件可以找到定义. 但是最后也不知道怎么找到 `Map`. 最后的解决办法是 GPT. 
 
+cuBlas 的参数很难想明白。
+
+cuBLAS 会先跳着读，相当于先复制一份改变顺序的矩阵，再1比1传给GPU
+ （实际当然不需要，只需要换组织方式就行）
+所以 (2,3,4) 的矩阵
+[[a11, a12, a13, a14
+  a21, a22, a23, a24,
+  a31, a32, a33, a34],
+
+ [b11, b12, b13, b14
+  b21, b22, b23, b24,
+  b31, b32, b33, b34]]
+
+内存中应该是
+a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34, b11, b12, b13, b14 ...
+
+cuBLAS 会复制成
+a11, a21, a31, a12, ...
+
+然后重排成
+所以 (2,3,4) 的矩阵
+[[a11, a21, a31
+  a12, a22, a13,
+  a13, a23, a33,
+  a14, a24, a34],
+
+ [b11, b21, b31
+  b12, b22, b13,
+  b13, b23, b33,
+  b14, b24, b34]]
+
+现在每一行是一个向量了，每个向量中包含3个元素，所以主序是3
+对的！主序不是向量的个数，而是向量中包含元素的个数，即向量大小
+所以一个矩阵 A (bs, m, n) 如果什么都不做，会被解释成 A^T (bs, n, m)，主序n
+
+总结
+永远写成 
+op(B^T) * op(A^T) = C^T
+B^T [bs, N, K], N
+A^T [bs, K, M], K
+C^T [bs, N, M], N
+
 GPU 的 cublas 是列优先的。感觉之前学过，矩阵乘法，ikj 顺序比 ijk 的 locality 好很多。估计是这个原因？
+
+#### 遇到问题
+建议 testcase 添加判断张量是不是在device上。我一开始 `auto grad_input = std::make_shared<Tensor>(input_dims, DataType::kFLOAT32);` 张量在cpu上，这部分testcase能过，但是GPT2的一直报SEGFAULT，很难排查原因。
 
 ### 作业三：实现Adam优化器
 
@@ -329,20 +374,23 @@ void AdamAccumulateGrad(const std::shared_ptr<Tensor> &grad, const std::shared_p
     // TODO：实现Adam优化器的梯度累积和参数更新
     // REF:
     // =================================== 作业 ===================================
-    // 只迭代一次
-    // m、v 已经给出，给的只读，不需要计算
-    // 这里只是一个kernel，相当于Add
+    CHECK(grad != nullptr);
+    CHECK(param != nullptr);
+    CHECK(m != nullptr);
+    CHECK(v != nullptr);
+
+    const size_t n = grad->NumElements();
+    CHECK_EQ(param->NumElements(), n);
+    CHECK_EQ(m->NumElements(), n);
+    CHECK_EQ(v->NumElements(), n);
+
+    CHECK_GT(t, 0) << "Adam step t must be >= 1";
 
     m->EigenMatrix() = beta1 * m->EigenMatrix() + (1-beta1) * grad->EigenMatrix();
-    // 这里要逐元素平方，为什么？Adam优化那里，v=...g^2 不是矩阵乘，而是矩阵逐元素乘法吗？
     v->EigenMatrix() = beta2 * v->EigenMatrix() + (1-beta2) * grad->EigenMatrix().array().square().matrix(); // x: grad->E * grad->E
 
-    // 这里不用可以省略 m_hat, v_hat 表达式，因为Eigen会延迟计算，不会复制一份过来
-    // 同时，保持array不用来回转
-    auto m_hat = m->EigenMatrix().array() / (1 - std::pow(beta1, t));
-    auto v_hat = v->EigenMatrix().array() / (1 - std::pow(beta2, t));
-
-    // param->EigenMatrix() -= learning_rate * (m->EigenMatrix / (1 - std::pow(beta1, t))) / ((v->EigenMatrix() / (1 - pow(beta2, t))).array().sqrt() + eps);
+    auto m_hat = m->EigenMatrix().array() / (1.0f - powf(beta1, t));
+    auto v_hat = v->EigenMatrix().array() / (1.0f - powf(beta2, t));
     param->EigenMatrix().array() -= learning_rate * m_hat / (v_hat.sqrt() + eps);
 }
 ```
@@ -355,8 +403,8 @@ void AdamAccumulateGrad(const std::shared_ptr<Tensor> &grad, const std::shared_p
 
 ```c++
 __global__ void AdamAccumulateGradKernel(float* param_ptr,
-                                        const float* m_ptr,
-                                        const float* v_ptr,
+                                        float* m_ptr,
+                                        float* v_ptr,
                                         const float* grad_ptr,
                                         const float beta1,
                                         const float beta2,
@@ -369,10 +417,14 @@ __global__ void AdamAccumulateGradKernel(float* param_ptr,
     if (idx < num_elements) {
         float m_t = beta1 * m_ptr[idx] + (1 - beta1) * grad_ptr[idx];
         float v_t = beta2 * v_ptr[idx] + (1 - beta2) * grad_ptr[idx] * grad_ptr[idx];
+        
+        // 要写回m&v！
+        m_ptr[idx] = m_t;
+        v_ptr[idx] = v_t;
+        
         float m_hat = m_t / bias_correction1;
         float v_hat = v_t / bias_correction2;
         param_ptr[idx] -= learning_rate * m_hat / (sqrtf(v_hat) + eps);
-
     }
 }
 
@@ -383,25 +435,20 @@ void AdamAccumulateGrad(const std::shared_ptr<Tensor> &grad, const std::shared_p
     // TODO：实现Adam优化器的梯度累积和参数更新
     // REF:
     // =================================== 作业 ===================================
-    // check
-    // 空指针检查
     CHECK(grad != nullptr);
     CHECK(param != nullptr);
     CHECK(m != nullptr);
     CHECK(v != nullptr);
 
-    // 维度检查
     const size_t n = grad->NumElements();
     CHECK_EQ(param->NumElements(), n);
     CHECK_EQ(m->NumElements(), n);
     CHECK_EQ(v->NumElements(), n);
 
-    // 步数检查
     CHECK_GT(t, 0) << "Adam step t must be >= 1";
 
-    // 计算偏执修正系数，避免GPU重复计算
-    const float bias_correction1 = 1 - std::pow(beta1, t);
-    const float bias_correction2 = 1 - std::pow(beta2, t);
+    const float bias_correction1 = 1.0f - powf(beta1, t);
+    const float bias_correction2 = 1.0f - powf(beta2, t);
     
     int threads_per_block = 256;
     int num_blocks = (n + threads_per_block - 1) / threads_per_block;
@@ -423,16 +470,10 @@ void AdamAccumulateGrad(const std::shared_ptr<Tensor> &grad, const std::shared_p
 ```
 
 #### 解决思路
-```
-// 这里要逐元素平方，为什么？Adam优化那里，v=...g^2 不是矩阵乘，而是矩阵逐元素乘法吗？
-v->EigenMatrix() = beta2 * v->EigenMatrix() + (1-beta2) * grad->EigenMatrix().array().square().matrix(); // x: grad->E * grad->E
-```
-- [x] GPT 说就是逐元素平方
-
-之后就是套公式就好
+查阅资料之后发现，Adam 是逐元素计算的，所以cuda不涉及数据同步的问题。
+这里一直报错，因为张量m，v没更新。因为读函数的参数签名的时候，误以为m, v是只读的，以为不需要更新。后面发现是共享指针只读。
 
 #### 遇到问题
-
 
 ### 作业四：实现Tensor基础操作
 
@@ -465,10 +506,11 @@ std::shared_ptr<Tensor> Tensor::Flatten(int64_t start, int64_t end) {
     CHECK_GE(end, start);
     CHECK_LT(end, dims_.size());
     
-    const auto flattened_dim = std::accumulate(dims_.begin() + start, dims_.begin() + end + 1, 1, std::multiplies<int64_t>{});
+    const auto flattened_dim = std::accumulate(dims_.begin() + start, dims_.begin() + end + 1, (int64_t){1}, std::multiplies<int64_t>{});
+
     auto new_shape = dims_;
-    new_shape[end] = flattened_dim;
-    new_shape.erase(new_shape.begin() + start, new_shape.begin() + end);
+    new_shape.erase(new_shape.begin() + start, new_shape.begin() + end + 1);
+    new_shape.insert(new_shape.begin() + start, flattened_dim);  
 
     return Contiguous()->View(new_shape);
 }
@@ -488,27 +530,23 @@ void Tensor::Backward(std::shared_ptr<Tensor> gradient, bool retain_graph, bool 
     // TODO：实现自动微分反向传播
     // 功能描述：1. 计算当前张量对叶子节点的梯度    2. 支持多输出场景的梯度累加
     // =================================== 作业 ===================================
-    // 叶子节点的建立AccumulateGrad类的过程也在BackwardPartial里面了
     CHECK(requires_grad_);
-    if (!gradient) {
-        // gradient 是可以为空的，默认值是nullptr。定义在.h文件。不造一个gradient会segfault
-        // 要造一个全1的Tensor类
-        // 根据torch语法想到Ones，搜索到nn functional里有Ones
-        // 但是用init的更好，因为头文件里有了
-        // function里的也是调用的init
-        auto ones = std::make_shared<Tensor>(dims_, DataType::kFLOAT32);
-        gradient = infini_train::nn::init::Ones(ones);
+    if (grad_fn_) {
+        if (!gradient) {
+            gradient = std::make_shared<Tensor>(dims_, dtype_, GetDevice());
+            gradient->Fill<float>(1.0f);
+        }
+        grad_fn()->BackwardPartial(gradient, output_idx_);
     }
-    grad_fn_->BackwardPartial(gradient, output_idx_);
 }
 ```
 
 #### 解决思路
-第一个明显不涉及数据，只是组织变一下。看到上面有个函数使用了 `Contiguous()->View(new_shape)`，然后查了一下知道这是啥意思就好做了。
-第二个主要就是想到 Ones 就好了。
+第一个明显不涉及数据，只是组织变一下。参数的类型非常有意思，明显是故意支持负值。然后看到上面有个函数使用了 `Contiguous()->View(new_shape)`，然后查了一下知道这是啥意思就好做了。
+第二个发现叶子节点的建立AccumulateGrad类的过程也在BackwardPartial里面了，所以直接检查要不要梯度，如果要但是没有，就填一个张量出来。
 
 #### 遇到问题
-
+有个问题是，反向传播如果用nn::Ones构造张量，会不过testcase，有点没懂为啥。
 
 
 ### 作业五 注册算子kernel的实现
@@ -538,10 +576,6 @@ template <typename FuncT> void Register(const KeyT &key, FuncT &&kernel) {
     // TODO：实现kernel注册机制
     // 功能描述：将kernel函数与设备类型、名称绑定
     // =================================== 作业 ===================================
-
-    // without this, there is no warning when adding an existed kernel
-    // however, what is the problem? 
-    // It seems that re-register multiple times should not affect much?
     CHECK(!key_to_kernel_map_.contains(key)) 
         << "Kernel already registered: " << key.second;
     key_to_kernel_map_.emplace(key, KernelFunction(kernel));
@@ -595,15 +629,9 @@ TinyShakespeareFile ReadTinyShakespeareFile(const std::string &path, size_t sequ
     | magic(4B) | version(4B) | num_toks(4B) | reserved(1012B) | token数据           |
     ----------------------------------------------------------------------------------
        =================================== 作业 =================================== */
-
     std::ifstream fin(path, std::ios::binary);
     CHECK(fin) << "Failed to open file" << path;
 
-    // magic
-    // the magic number is used for identify dataset
-    // and to specify the kTypeMap
-    // how do I know????? (I cheated by looking others' implementation)
-    // From https://github.com/InfiniTensor/InfiniTrain/blob/master/example/common/tiny_shakespeare_dataset.cc
     TinyShakespeareFile text_file;
     const auto header = ReadSeveralBytesFromIfstream(1024, &fin);
     const int32_t magic = BytesToType<int32_t>(header, 0); // sec param is offset from beginning
@@ -611,74 +639,38 @@ TinyShakespeareFile ReadTinyShakespeareFile(const std::string &path, size_t sequ
     const int32_t num_tokens = BytesToType<int32_t>(header, 8);
     text_file.type = kTypeMap.at(magic);
 
-    // There are tokens of size `num_tokens`
-    // The tokens are divided into sequence, whose size is fixed as `sequence_length`
-    // Therefore, there are `num_sequences` sequences
     const int num_sequences = num_tokens / sequence_length;
-    // vector assign: replace the content with
-    // 1. count & values
-    // 2. from first to last
-    // 3. init list
-    // Each sequence is mapped to a tensor,
-    //      therefore, the dim is of size `num_sequences` and each dim is of same size `sequence_length`
-    // The signature of `dims` is `std::vector<int64_t>`, so it is nec to map before use
-    // x: There is no padding processing!
-    // Actually there is, the last sequence will be dropped if not complete
-    text_file.dims.assign(num_sequences, static_cast<int64_t>(sequence_length));
+    text_file.dims.assign({num_sequences, static_cast<int64_t>(sequence_length)});
 
     const int data_size_in_bytes
         = std::accumulate(text_file.dims.begin(),
                         text_file.dims.end(),
-                        kTypeToSize.at(text_file.type), // change the init value here
-                         std::multiplies<int>{}); // use {} instead
-    // Init tensor, type is kINIT64? why?
+                        kTypeToSize.at(text_file.type),
+                        std::multiplies<int>{} // use {} instead
+          );
     text_file.tensor = infini_train::Tensor(text_file.dims, DataType::kINT64);
-    // let data_ptr_ pointing to the data 
     int64_t *dst = static_cast<int64_t *>(text_file.tensor.DataPtr());
-
-    // // 安全的 union，这里要么存 std::vector<uint16_t>, 要么存 std::vector<int32_t>
-    // std::variant<std::vector<uint16_t>, std::vector<int32_t>> buffer;
-    // if (text_file.type == TinyShakespeareType::kUINT16) {
-    //     CHECK_LE(sequence_length, 1024); // GPT-2: max_seq_length = 1024
-    //     buffer = std::vector<uint16_t>(num_sequences * sequence_length);
-    // } else if (text_file.type == TinyShakespeareType::kUINT32) {
-    //     CHECK_LE(sequence_length, 8192); // LLaMA-3: max_seq_length = 8192
-    //     buffer = std::vector<int32_t>(num_sequences * sequence_length);
-    // }
-
-    // // 用 visit 来访问并 cast。
-    // std::visit(
-    //     // 捕获外部变量，通过 引用
-    //     // [=] 就是捕获 值
-    //     [&](auto &vec) {
-    //         fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
-    //         for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
-    //     },
-    //     buffer);
 
     // 感觉上面很复杂。。。 明明都 if 了， 不如直接 cast
     if (text_file.type == TinyShakespeareType::kUINT16) {
+        CHECK_LE(sequence_length, 1024); // GPT-2: max_seq_length = 1024
         std::vector<uint16_t> vec(num_sequences * sequence_length);
         fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
         for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
     } else if (text_file.type == TinyShakespeareType::kUINT32) {
+        CHECK_LE(sequence_length, 8192); // LLaMA-3: max_seq_length = 8192
         std::vector<int32_t> vec(num_sequences * sequence_length);
         fin.read(reinterpret_cast<char *>(vec.data()), data_size_in_bytes);
         for (size_t i = 0; i < vec.size(); ++i) { dst[i] = static_cast<int64_t>(vec[i]); }
     }
     return text_file;
 }
+```
 
-
-// 用 infinitrain 的 写法，直接成员初始化
+```c++
 TinyShakespeareDataset::TinyShakespeareDataset(const std::string &filepath, size_t sequence_length)
     : text_file_(ReadTinyShakespeareFile(filepath, sequence_length)), sequence_length_(sequence_length),
       sequence_size_in_bytes_(sequence_length * sizeof(int64_t)), num_samples_(text_file_.dims[0] - 1) {
-    // =================================== 作业 ===================================
-    // TODO：初始化数据集实例
-    // HINT: 调用ReadTinyShakespeareFile加载数据文件
-    // =================================== 作业 ===================================
-    // 用 infinitrain 的 写法，直接成员初始化
     CHECK_EQ(text_file_.dims[1], sequence_length_);
     CHECK_EQ(static_cast<int>(text_file_.tensor.Dtype()), static_cast<int>(DataType::kINT64));
 }
@@ -699,6 +691,8 @@ Tokenizer::Tokenizer(const std::string &filepath) {
     | magic(4B) | version(4B) | vocab_size(4B) | reserved(1012B) | token词表数据       |
     ----------------------------------------------------------------------------------
     ===================================== 作业 ===================================== */
+    std::cout << "Tokenizer Start" << std::endl;
+
     std::ifstream fin(filepath, std::ios::binary);
     CHECK(fin) << "Failed to open file" << filepath;
 
@@ -709,14 +703,15 @@ Tokenizer::Tokenizer(const std::string &filepath) {
     eot_token_ = kEotMap.at(magic_number_);
     
     for (uint32_t i = 0; i < vocab_size_; i++) {
-        auto curSizeByte = ReadSeveralBytesFromIfstream(2, &fin);
-        size_t curSize = BytesToType<size_t>(curSizeByte, 0);
+        auto curSizeByte = ReadSeveralBytesFromIfstream(1, &fin);
+        auto curSize = BytesToType<uint8_t>(curSizeByte, 0);
         auto tokenByte = ReadSeveralBytesFromIfstream(curSize, &fin);
         // memcpy 不能作用于变长类型
         // std::string token = BytesToType<std::string>(tokenByte, 0);
         std::string token(tokenByte.begin(), tokenByte.end());
         token_table_.push_back(token);
     }
+    std::cout << "Tokenizer End" << std::endl;
 }
 ```
 
@@ -726,7 +721,9 @@ std::string Tokenizer::Decode(uint32_t token_id) const {
     TODO：实现token_id到文本的转换
     功能描述：根据token_id返回对应的文本片段
     ===================================== 作业 ===================================== */
-    CHECK_LT(token_id, token_table_.size());
+    std::cout << "Decode Start" << std::endl;
+    CHECK_LT(token_id, token_table_.size()) << "Too much tokens";
+    std::cout << "Decode End" << std::endl;
     return token_table_[token_id];
 }
 ```
@@ -734,13 +731,43 @@ std::string Tokenizer::Decode(uint32_t token_id) const {
 ```c++
 void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_size, uint32_t sequence_length,
                              uint32_t text_length, Device device) const {
-    /* ...原代码... */
+    std::vector<int64_t> dims;
+    dims.assign({batch_size, sequence_length});
+    // x_tensor (FLAGS_batch_size, FLAGS_sequence_length) eq:(4, 64)
+    infini_train::Tensor x_tensor = infini_train::Tensor(dims, DataType::kINT64);
+    int64_t *x_buff = static_cast<int64_t *>(x_tensor.DataPtr());
+    for (int i = 0; i < batch_size * sequence_length; ++i) { x_buff[i] = eot_token_; }
+
+    // Give some contexts: "The meaning of life is "
+    auto prompt = kPromptMap.at(magic_number_);
+    auto prompt_len = prompt.size();
+    for (int i = 0; i < prompt_len; ++i) { x_buff[i] = prompt[i]; }
+    std::cout << "The meaning of life is";
+
+    auto x = std::make_shared<infini_train::Tensor>(x_tensor.To(device));
+    uint64_t kRngState = kRngState;
     LOG(INFO) << "start generate text:";
+    // set cpu device
+    const auto cpu_device = Device{};
     for (int t = prompt_len; t < text_length; t++) {
         /* ===================================== 作业 =====================================
         TODO：实现单步文本生成逻辑
         HINT：调用model.Forward推理获取logits，根据推理结果进行随机采样，调用Decode获取文本结果
         ===================================== 作业 ===================================== */
+        x = std::make_shared<infini_train::Tensor>(x->To(device));
+
+        auto logits_device = model.Forward({x})[0];
+        auto logits_device_norm = nn::function::Softmax(logits_device, -1);
+        auto logits_cpu_norm  = logits_device_norm->To(cpu_device);
+
+        auto data_cpu = logits_cpu_norm.DataPtr();
+        auto probs_cpu = static_cast<float *>(data_cpu) + (t - 1) * vocab_size_;
+
+        x = std::make_shared<infini_train::Tensor>(x->To(cpu_device));
+        auto x_data_cpu = static_cast<int64_t *>(x->DataPtr());
+        auto next_token = SampleMult(probs_cpu, vocab_size_, RandomF32(kRngState));
+        x_data_cpu[t] = next_token;
+        std::cout << Decode(next_token) << " ";
     }
     std::cout << std::endl;
 }
@@ -798,10 +825,12 @@ tiny_shakespeare_train.bin  tiny_shakespeare_val.bin
 
 借助 GPT，词表格式有定长和变长，这里很明显的是，`0x400` 附近像是符号和字母表，字母之间的间隔不多，`0x600` 附近开始像是有词了，但是看起来有offset。这是后就挺明确是变长的了。借助GPT，`0x400` 开始 `0121` 一个字节的长度，`21` 确实对应`!`。所以读序列的时候，读一个 `kUINT16` 的长度，这是一个词的长度，然后按照值读string并cast存类里面就好了。
 
-具体的实现还是挺简单的，毕竟辅助函数都给写好了。。。
+实现的时候怎么在设备里传来传去包括 softmax 没有在forword中直接给出之类的，都有点想不到，参考原版一点点写的。
 
 ##### 文本生成
+不像人话。。。
 
+The meaning of life is open to interpretation. Think about it: What is there that is going on? If none of it is true, it isn't straight down the lines.<|endoftext|>Table 3: Performing-role zone logo for chrome Workers: Each column identifies all Other Occupational Requirements in company. Attribute:
 
 #### 遇到问题
-
+精度不够，不说人话。。。
