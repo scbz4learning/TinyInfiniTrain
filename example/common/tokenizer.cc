@@ -150,7 +150,7 @@ void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_siz
 
         x = std::make_shared<infini_train::Tensor>(x->To(cpu_device));
         auto x_data_cpu = static_cast<int64_t *>(x->DataPtr());
-        auto next_token = SampleMult(probs_cpu, vocab_size_, kRngState);
+        auto next_token = SampleMult(probs_cpu, vocab_size_, RandomF32(kRngState));
         x_data_cpu[t] = next_token;
         std::cout << next_token << " ";
     }
