@@ -140,7 +140,7 @@ void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_siz
         HINT：调用model.Forward推理获取logits，根据推理结果进行随机采样，调用Decode获取文本结果
         ===================================== 作业 ===================================== */
         x = std::make_shared<infini_train::Tensor>(x->To(device));
-        
+
         auto logits_device = model.Forward({x})[0];
         auto logits_device_norm = nn::function::Softmax(logits_device, -1);
         auto logits_cpu_norm  = logits_device_norm->To(cpu_device);
@@ -149,7 +149,7 @@ void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_siz
         auto probs_cpu = static_cast<float *>(data_cpu) + (t - 1) * vocab_size_;
 
         x = std::make_shared<infini_train::Tensor>(x->To(cpu_device));
-        auto x_data_cpu = static_cast<float *>(x->DataPtr());
+        auto x_data_cpu = static_cast<int64_t *>(x->DataPtr());
         auto next_token = SampleMult(probs_cpu, vocab_size_, kRngState);
         x_data_cpu[t] = next_token;
         std::cout << next_token << " ";
