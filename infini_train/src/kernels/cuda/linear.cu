@@ -79,18 +79,6 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
     return output;
 }
 
-__global__ void ReduceGradSumKernel(const float *tmp_ptr, float *real_ptr, int bs, int stride) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= stride) return;
-
-    float sum = 0.0f;
-    for (int b = 0; b < bs; b++) {
-        sum += tmp_ptr[b * stride + idx];
-    }
-
-    real_ptr[idx] = sum;
-}
-
 std::tuple<std::shared_ptr<Tensor>, std::shared_ptr<Tensor>>
 MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tensor> &other,
                const std::shared_ptr<Tensor> &grad_output) {
@@ -109,7 +97,7 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     // where other can have no batch dim
     const auto &other_dims = other->Dims();
     const auto other_dim_size = other_dims.size();
-    CHECK_GE(other_dim_size, 2);
+    CHECK_EQ(other_dim_size, input_dim_size);
 
     CHECK_EQ(K, other_dims[other_dim_size - 2]);
     const auto N = other_dims[other_dim_size - 1];
@@ -127,16 +115,6 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     auto grad_A_ptr  = static_cast<float*>(grad_input->DataPtr());
     auto grad_B_ptr  = static_cast<float*>(grad_other->DataPtr());
 
-    bool B_has_batch = other_dim_size == input_dim_size;
-
-    float* grad_B_tmp_ptr;
-    if (!B_has_batch) {
-        cudaMalloc(&grad_B_tmp_ptr, bs * K * N * sizeof(float));
-        cudaMemset(grad_B_tmp_ptr, 0, bs * K * N * sizeof(float));
-    } else {
-        grad_B_tmp_ptr = grad_B_ptr;
-    }
-
     const float alpha = 1.0f;
     const float beta = 0.0f;
     cublasHandle_t handle;
@@ -144,7 +122,7 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
 
     // Strides
     const long long strideA = M * K;
-    const long long strideB = other_dims.size() == input_dims.size() ? K * N : 0;
+    const long long strideB = K * N;
     const long long strideC = M * N;
 
     // grad_A = grad_C * B^T
@@ -178,18 +156,8 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
         grad_C_ptr, N, strideC,
         A_ptr, K, strideA,
         &beta,
-        grad_B_tmp_ptr, N, strideB, // use temp
+        grad_B_ptr, N, strideB,
         bs));
-    
-    // Reduce grad_B if no batch dim
-    if (!B_has_batch) {
-        int threads_per_block = 256;
-        int num_blocks = (K * N + threads_per_block - 1) / threads_per_block;
-        ReduceGradSumKernel<<<num_blocks, threads_per_block>>>(
-            grad_B_tmp_ptr, grad_B_ptr, bs, K*N);
-        cudaDeviceSynchronize();
-        cudaFree(grad_B_tmp_ptr);
-    }
 
     CUBLAS_CHECK(cublasDestroy(handle));
 
