@@ -42,7 +42,7 @@ __global__ void CrossEntropyForwardKernel(const float *__restrict__ input_ptr,
     // calculate the max
     float thread_max = kNegativeInfinity;
     for (int i = tid; i < num_classes; i += BLOCK_SIZE) { thread_max = fmaxf(thread_max, input_ptr[base + i]); }
-    shared.max_logit = cub::BlockReduce<float, BLOCK_SIZE>(shared.reduce).Reduce(thread_max, cub::Max());
+    shared.max_logit = cub::BlockReduce<float, BLOCK_SIZE>(shared.reduce).Reduce(thread_max, ::cuda::maximum<>());
     __syncthreads();
 
     // calculate the sum of exponents
@@ -127,7 +127,7 @@ __global__ void CrossEntropyBackwardKernel(const float *__restrict__ input_ptr, 
     // calculate the max
     float thread_max = kNegativeInfinity;
     for (int i = tid; i < num_classes; i += BLOCK_SIZE) { thread_max = fmaxf(thread_max, input_ptr[idx_base + i]); }
-    shared.max_logit = cub::BlockReduce<float, BLOCK_SIZE>(shared.reduce).Reduce(thread_max, cub::Max());
+    shared.max_logit = cub::BlockReduce<float, BLOCK_SIZE>(shared.reduce).Reduce(thread_max, ::cuda::maximum<>());
     __syncthreads();
 
     // calculate the sum
