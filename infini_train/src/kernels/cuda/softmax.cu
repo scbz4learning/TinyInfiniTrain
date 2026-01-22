@@ -29,7 +29,7 @@ __global__ void SoftmaxForwardKernel(T *output, const T *input, int64_t outer_si
         int64_t idx = (group * axis_size + axis) * inner_size + inner_idx;
         thread_max = max(thread_max, input[idx]);
     }
-    T block_max = BlockReduce(temp_storage_max).Reduce(thread_max, cub::Max());
+    T block_max = BlockReduce(temp_storage_max).Reduce(thread_max, ::cuda::maximum<>());
 
     if (tid == 0) {
         row_max = block_max;
