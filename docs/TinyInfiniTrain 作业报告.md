@@ -1,8 +1,8 @@
 # TinyInfiniTrain 作业报告
 
 ## 一、test 通过截图
-![Result: Failed on GPT2](result-failed-on-GPT2.png)
-![GPT2 Result](GPT2-Result.png)
+![Result: All Pass](image.png)
+
 ## 二、作业步骤
 
 > 将代码填入下面代码块中指定位置，并详细描述完成该作业的解决思路和遇到的问题。
@@ -826,11 +826,3 @@ tiny_shakespeare_train.bin  tiny_shakespeare_val.bin
 借助 GPT，词表格式有定长和变长，这里很明显的是，`0x400` 附近像是符号和字母表，字母之间的间隔不多，`0x600` 附近开始像是有词了，但是看起来有offset。这是后就挺明确是变长的了。借助GPT，`0x400` 开始 `0121` 一个字节的长度，`21` 确实对应`!`。所以读序列的时候，读一个 `kUINT16` 的长度，这是一个词的长度，然后按照值读string并cast存类里面就好了。
 
 实现的时候怎么在设备里传来传去包括 softmax 没有在forword中直接给出之类的，都有点想不到，参考原版一点点写的。
-
-##### 文本生成
-不像人话。。。
-
-The meaning of life is open to interpretation. Think about it: What is there that is going on? If none of it is true, it isn't straight down the lines.<|endoftext|>Table 3: Performing-role zone logo for chrome Workers: Each column identifies all Other Occupational Requirements in company. Attribute:
-
-#### 遇到问题
-精度不够，不说人话。。。
