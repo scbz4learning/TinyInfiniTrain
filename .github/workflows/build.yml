@@ -26,3 +26,16 @@ jobs:
 
     - name: Test cpu
       run: make test-cpp
+
+- name: Show test log
+  if: failure() || always()
+  run: |
+    echo "=== LastTest.log ==="
+    cat build/Release/Testing/Temporary/LastTest.log || true
+
+- name: Upload test log artifact
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: LastTest-log
+    path: build/Release/Testing/Temporary/LastTest.log

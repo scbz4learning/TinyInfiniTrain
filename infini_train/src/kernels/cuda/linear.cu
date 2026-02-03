@@ -53,25 +53,17 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
     cublasHandle_t handle;
     CUBLAS_CHECK(cublasCreate(&handle));
 
-    const auto* A = static_cast<float*>(input->DataPtr());
-    const auto* B = static_cast<float*>(other->DataPtr());
-    auto* C = static_cast<float*>(output->DataPtr());
+    const auto *A = static_cast<float *>(input->DataPtr());
+    const auto *B = static_cast<float *>(other->DataPtr());
+    auto *C = static_cast<float *>(output->DataPtr());
 
     // stride
     const long long strideA = M * K;
     const long long strideB = (other_dims.size() == input_dims.size()) ? K * N : 0LL;
     const long long strideC = M * N;
 
-    CUBLAS_CHECK(cublasSgemmStridedBatched(
-        handle,
-        CUBLAS_OP_N, CUBLAS_OP_N,
-        N, M, K,
-        &alpha,
-        B, N, strideB,
-        A, K, strideA,
-        &beta,
-        C, N, strideC,
-        bs));
+    CUBLAS_CHECK(cublasSgemmStridedBatched(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &alpha, B, N, strideB, A, K,
+                                           strideA, &beta, C, N, strideC, bs));
 
     CUBLAS_CHECK(cublasDestroy(handle));
     return output;
@@ -97,18 +89,18 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
 
     CHECK_EQ(K, other_dims[other_dim_size - 2]);
     const auto N = other_dims[other_dim_size - 1];
-    
+
     auto grad_input = std::make_shared<Tensor>(input_dims, DataType::kFLOAT32, input->GetDevice());
     auto grad_other = std::make_shared<Tensor>(other_dims, DataType::kFLOAT32, other->GetDevice());
 
     const auto bs = std::accumulate(input_dims.begin(), input_dims.end() - 2, 1LL, std::multiplies<int64_t>{});
 
-    const auto* A_ptr  = static_cast<float*>(input->DataPtr());
-    const auto* B_ptr  = static_cast<float*>(other->DataPtr());
-    const auto* grad_C_ptr = static_cast<float*>(grad_output->DataPtr());
+    const auto *A_ptr = static_cast<float *>(input->DataPtr());
+    const auto *B_ptr = static_cast<float *>(other->DataPtr());
+    const auto *grad_C_ptr = static_cast<float *>(grad_output->DataPtr());
 
-    auto grad_A_ptr  = static_cast<float*>(grad_input->DataPtr());
-    auto grad_B_ptr  = static_cast<float*>(grad_other->DataPtr());
+    auto grad_A_ptr = static_cast<float *>(grad_input->DataPtr());
+    auto grad_B_ptr = static_cast<float *>(grad_other->DataPtr());
 
     const float alpha = 1.0f;
     const float beta = 0.0f;
@@ -122,37 +114,21 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
 
     // grad_A = grad_C * B^T
     // grad_A^T = T(B^T) * grad_C^T
-    
+
     // B^T      [bs, N, K], N, op=T
     // grad_C^T [bs, N, M], N
     // grad_A^T [bs, K, M], K
-    CUBLAS_CHECK(cublasSgemmStridedBatched(
-        handle,
-        CUBLAS_OP_T, CUBLAS_OP_N,
-        K, M, N,
-        &alpha,
-        B_ptr, N, strideB,
-        grad_C_ptr, N, strideC,
-        &beta,
-        grad_A_ptr, K, strideA,
-        bs));
-    
+    CUBLAS_CHECK(cublasSgemmStridedBatched(handle, CUBLAS_OP_T, CUBLAS_OP_N, K, M, N, &alpha, B_ptr, N, strideB,
+                                           grad_C_ptr, N, strideC, &beta, grad_A_ptr, K, strideA, bs));
+
     // grad_B = T(A) * grad_C
     // grad_B^T = grad_C^T * T(A^T)
 
     // grad_C^T [bs, N, M], N
     // A^T      [bs, K, M], K, op=T
     // grad_B^T [bs, N, K], N
-    CUBLAS_CHECK(cublasSgemmStridedBatched(
-        handle,
-        CUBLAS_OP_N, CUBLAS_OP_T,
-        N, K, M,
-        &alpha,
-        grad_C_ptr, N, strideC,
-        A_ptr, K, strideA,
-        &beta,
-        grad_B_ptr, N, strideB,
-        bs));
+    CUBLAS_CHECK(cublasSgemmStridedBatched(handle, CUBLAS_OP_N, CUBLAS_OP_T, N, K, M, &alpha, grad_C_ptr, N, strideC,
+                                           A_ptr, K, strideA, &beta, grad_B_ptr, N, strideB, bs));
 
     CUBLAS_CHECK(cublasDestroy(handle));
 

@@ -27,11 +27,12 @@ void AdamAccumulateGrad(const std::shared_ptr<Tensor> &grad, const std::shared_p
     CHECK_EQ(param->NumElements(), n);
     CHECK_EQ(m->NumElements(), n);
     CHECK_EQ(v->NumElements(), n);
-    
+
     CHECK_GT(t, 0) << "Adam step t must be >= 1";
 
-    m->EigenMatrix() = beta1 * m->EigenMatrix() + (1-beta1) * grad->EigenMatrix();
-    v->EigenMatrix() = beta2 * v->EigenMatrix() + (1-beta2) * grad->EigenMatrix().array().square().matrix(); // x: grad->E * grad->E
+    m->EigenMatrix() = beta1 * m->EigenMatrix() + (1 - beta1) * grad->EigenMatrix();
+    v->EigenMatrix() = beta2 * v->EigenMatrix()
+                     + (1 - beta2) * grad->EigenMatrix().array().square().matrix(); // x: grad->E * grad->E
 
     auto m_hat = m->EigenMatrix().array() / (1.0f - powf(beta1, t));
     auto v_hat = v->EigenMatrix().array() / (1.0f - powf(beta2, t));

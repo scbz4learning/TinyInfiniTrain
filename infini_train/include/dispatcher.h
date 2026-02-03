@@ -51,8 +51,7 @@ public:
         // TODO：实现kernel注册机制
         // 功能描述：将kernel函数与设备类型、名称绑定
         // =================================== 作业 ===================================
-        CHECK(!key_to_kernel_map_.contains(key)) 
-            << "Kernel already registered: " << key.second;
+        CHECK(!key_to_kernel_map_.contains(key)) << "Kernel already registered: " << key.second;
         key_to_kernel_map_.emplace(key, KernelFunction(kernel));
     }
 
@@ -62,11 +61,11 @@ private:
 } // namespace infini_train
 
 #define REGISTER_KERNEL(device, kernel_name, kernel_func)                                                              \
-    static bool registery_##kernel_name##_##__LINE__ = []() {                                                            \
-        infini_train::Dispatcher::Instance().Register({device, #kernel_name}, kernel_func);                          \
+    static bool registery_##kernel_name##_##__LINE__ = []() {                                                          \
+        infini_train::Dispatcher::Instance().Register({device, #kernel_name}, kernel_func);                            \
         return true;                                                                                                   \
     }();
-    // =================================== 作业 ===================================
-    // TODO：实现自动注册宏
-    // 功能描述：在全局静态区注册kernel，避免显式初始化代码
-    // =================================== 作业 ===================================
+  // =================================== 作业 ===================================
+  // TODO：实现自动注册宏
+  // 功能描述：在全局静态区注册kernel，避免显式初始化代码
+  // =================================== 作业 ===================================

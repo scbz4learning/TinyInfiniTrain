@@ -75,11 +75,9 @@ TinyShakespeareFile ReadTinyShakespeareFile(const std::string &path, size_t sequ
     text_file.dims.assign({num_sequences, static_cast<int64_t>(sequence_length)});
 
     const int data_size_in_bytes
-        = std::accumulate(text_file.dims.begin(),
-                        text_file.dims.end(),
-                        kTypeToSize.at(text_file.type),
-                        std::multiplies<int>{} // use {} instead
-          );
+        = std::accumulate(text_file.dims.begin(), text_file.dims.end(), kTypeToSize.at(text_file.type),
+                          std::multiplies<int>{} // use {} instead
+        );
     text_file.tensor = infini_train::Tensor(text_file.dims, DataType::kINT64);
     int64_t *dst = static_cast<int64_t *>(text_file.tensor.DataPtr());
 

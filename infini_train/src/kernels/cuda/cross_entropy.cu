@@ -1,10 +1,10 @@
 #include <cmath>
 #include <cstdint>
 #include <cub/block/block_reduce.cuh>
+#include <cub/version.cuh>
 #include <cuda_runtime.h>
 #include <limits>
 #include <numeric>
-#include <cub/version.cuh>
 
 #include "glog/logging.h"
 
@@ -17,14 +17,14 @@ constexpr float kNegativeInfinity = -std::numeric_limits<float>::infinity();
 }
 
 #if defined(CUB_VERSION) && CUB_VERSION >= 200800
-    #include <cuda/std/functional>
-    using CubSumOp = ::cuda::std::plus<>;
-    using CubMaxOp = ::cuda::maximum<>;
-    using CubMinOp = ::cuda::minimum<>;
+#include <cuda/std/functional>
+using CubSumOp = ::cuda::std::plus<>;
+using CubMaxOp = ::cuda::maximum<>;
+using CubMinOp = ::cuda::minimum<>;
 #else
-    using CubSumOp = cub::Sum;
-    using CubMaxOp = cub::Max;
-    using CubMinOp = cub::Min;
+using CubSumOp = cub::Sum;
+using CubMaxOp = cub::Max;
+using CubMinOp = cub::Min;
 #endif
 
 template <size_t BLOCK_SIZE, typename TargetType>

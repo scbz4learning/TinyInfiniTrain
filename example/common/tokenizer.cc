@@ -88,7 +88,7 @@ Tokenizer::Tokenizer(const std::string &filepath) {
     const uint32_t version = BytesToType<uint32_t>(header, 4);
     vocab_size_ = BytesToType<uint32_t>(header, 8);
     eot_token_ = kEotMap.at(magic_number_);
-    
+
     for (uint32_t i = 0; i < vocab_size_; i++) {
         auto curSizeByte = ReadSeveralBytesFromIfstream(1, &fin);
         auto curSize = BytesToType<uint8_t>(curSizeByte, 0);
@@ -137,7 +137,7 @@ void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_siz
         ===================================== 作业 ===================================== */
         auto logits_device = model.Forward({x})[0];
         auto logits_device_norm = nn::function::Softmax(logits_device, -1);
-        auto logits_cpu_norm  = logits_device_norm->To(cpu_device);
+        auto logits_cpu_norm = logits_device_norm->To(cpu_device);
 
         auto data_cpu = logits_cpu_norm.DataPtr();
         auto probs_cpu = static_cast<float *>(data_cpu) + (t - 1) * vocab_size_;

@@ -14,14 +14,14 @@ constexpr float kInfinity = std::numeric_limits<float>::infinity();
 namespace {
 
 #if defined(CUB_VERSION) && CUB_VERSION >= 200800
-    #include <cuda/std/functional>
-    using CubSumOp = ::cuda::std::plus<>;
-    using CubMaxOp = ::cuda::maximum<>;
-    using CubMinOp = ::cuda::minimum<>;
+#include <cuda/std/functional>
+using CubSumOp = ::cuda::std::plus<>;
+using CubMaxOp = ::cuda::maximum<>;
+using CubMinOp = ::cuda::minimum<>;
 #else
-    using CubSumOp = cub::Sum;
-    using CubMaxOp = cub::Max;
-    using CubMinOp = cub::Min;
+using CubSumOp = cub::Sum;
+using CubMaxOp = cub::Max;
+using CubMinOp = cub::Min;
 #endif
 
 // Reduction operators

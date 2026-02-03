@@ -35,19 +35,18 @@ std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, cons
 
     const auto bs = std::accumulate(input_dims.begin(), input_dims.end() - 2, 1LL, std::multiplies<int64_t>{});
 
-    const auto* A_ptr  = static_cast<float*>(input->DataPtr());
-    const auto* B_ptr  = static_cast<float*>(other->DataPtr());
-    auto* C_ptr = static_cast<float*>(output->DataPtr());
+    const auto *A_ptr = static_cast<float *>(input->DataPtr());
+    const auto *B_ptr = static_cast<float *>(other->DataPtr());
+    auto *C_ptr = static_cast<float *>(output->DataPtr());
 
     for (auto b = 0LL; b < bs; b++) {
-        Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-            A(A_ptr + b * M * K, M, K);
-        Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-            B(B_ptr + b * K * N, K, N);
-        Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-            C(C_ptr + b * M * N, M, N);
+        Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> A(A_ptr + b * M * K, M,
+                                                                                                  K);
+        Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> B(B_ptr + b * K * N, K,
+                                                                                                  N);
+        Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> C(C_ptr + b * M * N, M, N);
 
-        C.noalias() = A * B; 
+        C.noalias() = A * B;
     }
     return output;
 }
@@ -83,26 +82,26 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
 
     const auto bs = std::accumulate(input_dims.begin(), input_dims.end() - 2, 1LL, std::multiplies<int64_t>{});
 
-    const auto* A_ptr  = static_cast<float*>(input->DataPtr());
-    const auto* B_ptr  = static_cast<float*>(other->DataPtr());
-    const auto* grad_C_ptr = static_cast<float*>(grad_output->DataPtr());
+    const auto *A_ptr = static_cast<float *>(input->DataPtr());
+    const auto *B_ptr = static_cast<float *>(other->DataPtr());
+    const auto *grad_C_ptr = static_cast<float *>(grad_output->DataPtr());
 
-    auto grad_A_ptr  = static_cast<float*>(grad_input->DataPtr());
-    auto grad_B_ptr  = static_cast<float*>(grad_other->DataPtr());
+    auto grad_A_ptr = static_cast<float *>(grad_input->DataPtr());
+    auto grad_B_ptr = static_cast<float *>(grad_other->DataPtr());
 
-    for (auto b = 0LL; b < bs; b++){
-        Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-            A(A_ptr + b * M * K, M, K);
-        Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-            grad_A(grad_A_ptr + b * M * K, M, K);
+    for (auto b = 0LL; b < bs; b++) {
+        Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> A(A_ptr + b * M * K, M,
+                                                                                                  K);
+        Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> grad_A(grad_A_ptr + b * M * K,
+                                                                                                 M, K);
 
-        Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-            B(B_ptr + b * K * N, K, N);
-        Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-            grad_B(grad_B_ptr + b * K * N, K, N);
-        
-        Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> 
-            grad_C(grad_C_ptr + b * M * N, M, N);
+        Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> B(B_ptr + b * K * N, K,
+                                                                                                  N);
+        Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> grad_B(grad_B_ptr + b * K * N,
+                                                                                                 K, N);
+
+        Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> grad_C(
+            grad_C_ptr + b * M * N, M, N);
 
         grad_A.noalias() = grad_C * B.transpose();
         // if other has no batch, grad_other should be accumulately added
