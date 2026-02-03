@@ -3,6 +3,33 @@
 ## 一、test 通过截图
 ![Result: All Pass](image.png)
 
+### 反馈1
+Github Action 不能通过, 原因是 TinyInfiniTrain/example/gpt2/net.cc 不支持纯cpu推理, 里面有一段代码没有判断, 直接张量传gpu.
+
+![net.cc 张量传gpu](image-1.png).
+
+看起来也没法修, 因为原版代码的 device.cc 中有设备管理, 能判断是否存在显卡; 简化版省略了这段, 所以没法知道是否存在 gpu.
+
+### 反馈2
+建议 .github/workflows/build.yml 中加入
+
+```
+    - name: Show test log
+      if: failure() || always()
+      run: |
+        echo "=== LastTest.log ==="
+        cat build/Release/Testing/Temporary/LastTest.log || true
+
+    - name: Upload test log artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: LastTest-log
+        path: build/Release/Testing/Temporary/LastTest.log
+```
+
+方便查看错误原因和调试.
+
 ## 二、作业步骤
 
 > 将代码填入下面代码块中指定位置，并详细描述完成该作业的解决思路和遇到的问题。
